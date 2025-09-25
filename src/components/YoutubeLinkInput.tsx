@@ -87,7 +87,7 @@ const YoutubeLinkInput: FC<YoutubeLinkInputProps> = ({
         if (value.trim()) {
             saveHistory(value);
             onPlay();
-            refreshSuggestions(value);
+            setShowSuggestions(false);
         }
     };
 
