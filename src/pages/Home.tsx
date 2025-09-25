@@ -136,10 +136,7 @@ const Home = () => {
           onClear={handleClearYoutubeLink}
           onPaste={handlePasteYoutubeLink}
           onPlay={handlePlayYoutubeLink}
-          suggestions={suggestions}
-          onSelectSuggestion={handleSelectSuggestion}
           placeholder="Enter link YouTube..."
-          onFocus={handleYoutubeLinkFocus}
         />
       </div>
 

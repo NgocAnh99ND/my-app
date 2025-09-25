@@ -45,14 +45,14 @@ const PlayerControls: FC<PlayerControlsProps> = ({
         {/* Button nhỏ: Bật phụ đề tiếng Anh & tốc độ 0.8 */}
         <IconButton
             icon={
-                <span className="text-xs font-bold">
+                <span className="text-xs font-bold leading-3">
                     EN
                     <br />
-                    0.8x
+                    0.75x
                 </span>
             }
             onClick={onActivateSubtitleAndSpeed}
-            ariaLabel="Bật phụ đề tiếng Anh và tốc độ 0.8"
+            ariaLabel="Bật phụ đề tiếng Anh và tốc độ 0.75"
             className="flex items-center justify-center rounded-lg transition-colors h-8 w-8 p-0 bg-blue-100 hover:bg-blue-200 mr-2"
         />
 
