@@ -1,5 +1,5 @@
 import type { FC } from "react";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import Input from "./Input";
 import IconButton from "./IconButton";
 import SuggestionList from "./SuggestionList";
@@ -15,7 +15,7 @@ type YoutubeLinkInputProps = {
 };
 
 const STORAGE_KEY = "youtube_links";
-const MAX_HISTORY = 15;
+const MAX_HISTORY = 50;
 
 function loadHistory(): string[] {
     try {
@@ -50,6 +50,23 @@ const YoutubeLinkInput: FC<YoutubeLinkInputProps> = ({
 }) => {
     const [suggestions, setSuggestions] = useState<string[]>([]);
     const [showSuggestions, setShowSuggestions] = useState(false);
+    const wrapperRef = useRef<HTMLDivElement>(null);
+
+    // Lắng nghe click ngoài để ẩn suggestions
+    useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            if (
+                wrapperRef.current &&
+                !wrapperRef.current.contains(e.target as Node)
+            ) {
+                setShowSuggestions(false);
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => {
+            document.removeEventListener("mousedown", handleClickOutside);
+        };
+    }, []);
 
     const refreshSuggestions = (keyword = "") => {
         const all = loadHistory();
@@ -92,7 +109,10 @@ const YoutubeLinkInput: FC<YoutubeLinkInputProps> = ({
     };
 
     return (
-        <div className={`flex items-center relative w-full max-w-[560px] ${className}`}>
+        <div
+            ref={wrapperRef}
+            className={`flex items-center relative w-full max-w-[560px] ${className}`}
+        >
             <div className="relative flex-1">
                 <Input
                     type="text"
@@ -105,7 +125,14 @@ const YoutubeLinkInput: FC<YoutubeLinkInputProps> = ({
                 />
                 {value && (
                     <IconButton
-                        icon={<img src="/icons/deleteButton.svg" alt="Xóa" width={20} height={20} />}
+                        icon={
+                            <img
+                                src="/icons/deleteButton.svg"
+                                alt="Xóa"
+                                width={20}
+                                height={20}
+                            />
+                        }
                         onClick={handleClear}
                         className="absolute right-2 top-1/2 -translate-y-1/2"
                         ariaLabel="Clear input"
@@ -121,7 +148,14 @@ const YoutubeLinkInput: FC<YoutubeLinkInputProps> = ({
             </div>
 
             <IconButton
-                icon={<img src="/icons/clipboard-paste.svg" alt="Paste" width={24} height={24} />}
+                icon={
+                    <img
+                        src="/icons/clipboard-paste.svg"
+                        alt="Paste"
+                        width={24}
+                        height={24}
+                    />
+                }
                 onClick={onPaste}
                 className="ml-2 bg-gray-200 hover:bg-gray-300 rounded h-[37px] w-[37px]"
                 ariaLabel="Paste clipboard"

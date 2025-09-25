@@ -136,7 +136,7 @@ const Home = () => {
       </div>
 
       {/* SearchBar + YoutubeLinkInput */}
-      <div className="flex flex-col items-center w-full max-w-[800px] mt-4 gap-1">
+      <div className="flex flex-col items-center w-full max-w-[800px] mt-2 gap-1">
         <SearchBar
           value={searchText}
           onChange={setSearchText}
@@ -157,7 +157,7 @@ const Home = () => {
       <NoteEditor />
 
       {/* PlayerControls */}
-      <div className="flex w-full justify-center mt-4 mb-4">
+      <div className="flex w-full justify-center mt-2 mb-25">
         <PlayerControls
           seekSeconds={seekSeconds}
           setSeekSeconds={setSeekSeconds}

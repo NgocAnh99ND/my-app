@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import Input from "./Input";
 import IconButton from "./IconButton";
 import SuggestionList from "./SuggestionList";
@@ -11,6 +11,23 @@ const NoteEditor = () => {
     const [showSuggestions, setShowSuggestions] = useState(false);
 
     const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const titleWrapperRef = useRef<HTMLDivElement>(null);
+
+    // ⬇️ Thêm useEffect để lắng nghe click outside
+    useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            if (
+                titleWrapperRef.current &&
+                !titleWrapperRef.current.contains(e.target as Node)
+            ) {
+                setShowSuggestions(false);
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => {
+            document.removeEventListener("mousedown", handleClickOutside);
+        };
+    }, []);
 
     // Lấy danh sách các bản lưu từ localStorage (có lọc theo keyword/tên)
     const fetchNotes = (keyword = "") => {
@@ -33,25 +50,21 @@ const NoteEditor = () => {
         setShowSuggestions(notes.length > 0);
     };
 
-    // Khi gõ tiêu đề
     const handleTitleChange = (v: string) => {
         setTitle(v);
         fetchNotes(v);
     };
 
-    // Khi chọn suggestion
     const handleSelectSuggestion = (noteTitle: string) => {
         setTitle(noteTitle);
         setContent(localStorage.getItem("note_" + noteTitle) ?? "");
         setShowSuggestions(false);
     };
 
-    // Xóa input
     const handleClearTitle = () => setTitle("");
     const handleClearContent = () => setContent("");
     const handleClearSearchArea = () => setSearchArea("");
 
-    // Paste clipboard
     const handlePasteContent = async () => {
         try {
             const text = await navigator.clipboard.readText();
@@ -61,7 +74,6 @@ const NoteEditor = () => {
         }
     };
 
-    // Lưu note vào localStorage
     const handleSaveNote = () => {
         if (!title.trim()) {
             alert("Vui lòng nhập tên bản lưu.");
@@ -73,10 +85,9 @@ const NoteEditor = () => {
         }
         localStorage.setItem("note_" + title.trim(), content.trim());
         alert("Đã lưu với tên: " + title.trim());
-        fetchNotes(""); // cập nhật gợi ý mới
+        fetchNotes("");
     };
 
-    // Xóa toàn bộ note
     const handleClearAllNotes = () => {
         let removed = 0;
         for (let i = 0; i < localStorage.length; i++) {
@@ -94,30 +105,27 @@ const NoteEditor = () => {
         setContent("");
     };
 
-    // Tìm kiếm từ trong textarea
     const handleSearchFromArea = () => {
         if (!searchArea.trim()) return;
         const idx = content.toLowerCase().indexOf(searchArea.toLowerCase());
         if (idx !== -1 && textareaRef.current) {
             textareaRef.current.focus();
             textareaRef.current.setSelectionRange(idx, idx + searchArea.length);
-            // cuộn đến vị trí tìm thấy
             const lines = content.substring(0, idx).split("\n").length;
-            textareaRef.current.scrollTop = (lines - 1) * 33; // 33px dòng (có thể chỉnh)
+            textareaRef.current.scrollTop = (lines - 1) * 33;
         } else {
             alert("Không tìm thấy từ cần tìm.");
         }
     };
 
-    // Cuộn lên đầu textarea
     const handleScrollTop = () => {
         if (textareaRef.current) textareaRef.current.scrollTop = 0;
     };
 
     return (
-        <div className="flex-1 relative bg-white p-3 rounded-xl w-full max-w-[725px] shadow-lg flex flex-col mt-4">
+        <div className="flex-1 relative bg-white p-3 rounded-xl w-full max-w-[725px] shadow-lg flex flex-col mt-2">
             {/* Tiêu đề + gợi ý bản lưu */}
-            <div className="relative mb-2">
+            <div className="relative mb-2" ref={titleWrapperRef}>
                 <Input
                     type="text"
                     value={title}
@@ -141,7 +149,6 @@ const NoteEditor = () => {
                         className="absolute right-2 top-1/2 -translate-y-1/2"
                     />
                 )}
-                {/* Gợi ý bản lưu */}
                 {showSuggestions && (
                     <SuggestionList
                         suggestions={suggestions}
@@ -175,9 +182,8 @@ const NoteEditor = () => {
                 )}
             </div>
 
-            {/* Footer: các chức năng phụ */}
+            {/* Footer */}
             <div className="flex items-center justify-end gap-2 mt-2">
-                {/* Search trong textarea */}
                 <div className="flex items-center border border-blue-500 rounded-full overflow-hidden bg-white relative h-8 w-[200px] mr-2">
                     <Input
                         type="text"
@@ -208,7 +214,7 @@ const NoteEditor = () => {
                         🔍
                     </button>
                 </div>
-                {/* Paste clipboard */}
+
                 <IconButton
                     icon={
                         <img
@@ -221,7 +227,6 @@ const NoteEditor = () => {
                     onClick={handlePasteContent}
                     className="bg-gray-200 hover:bg-gray-300 rounded h-[30px] w-[30px]"
                 />
-                {/* Cuộn lên đầu */}
                 <IconButton
                     icon={
                         <img
@@ -234,7 +239,6 @@ const NoteEditor = () => {
                     onClick={handleScrollTop}
                     className="bg-gray-100 hover:bg-gray-200 rounded-full h-[30px] w-[30px]"
                 />
-                {/* Lưu */}
                 <button
                     type="button"
                     onClick={handleSaveNote}
@@ -242,7 +246,6 @@ const NoteEditor = () => {
                 >
                     Lưu
                 </button>
-                {/* Xóa toàn bộ */}
                 <IconButton
                     icon={
                         <img
