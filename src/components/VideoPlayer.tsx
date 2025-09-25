@@ -4,25 +4,17 @@ import React, { useEffect, useMemo, useRef } from "react";
 export type VideoPlayerProps = {
     videoId: string;
     className?: string;
-    /** Giây bắt đầu khi tải video */
     initialTime?: number;
-    /** Callback mỗi giây khi đang PLAY */
     onTimeUpdate?: (currentTime: number) => void;
-    /** Tốc độ phát mặc định, vd: 1, 1.25, 1.5, 2 */
     defaultPlaybackRate?: number;
-    /** Mã ngôn ngữ phụ đề tự bật, vd: "en", "vi" */
     autoSubtitleLang?: string;
-    /** Điều khiển play/pause từ ngoài */
     shouldPlay?: boolean;
-    /** Nhận YT.Player khi sẵn sàng */
     onReady?: (player: YT.Player) => void;
-    /** Nhận sự kiện thay đổi trạng thái */
     onStateChange?: (event: YT.OnStateChangeEvent) => void;
 };
 
 const YT_SCRIPT_SRC = "https://www.youtube.com/iframe_api";
 
-/** Tải YouTube IFrame API một lần */
 function ensureYouTubeAPILoaded(): Promise<void> {
     return new Promise((resolve) => {
         if (window.YT && window.YT.Player) {
@@ -59,14 +51,18 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     const playerRef = useRef<YT.Player | null>(null);
     const mountRef = useRef<HTMLDivElement | null>(null);
     const timeIntervalRef = useRef<number | null>(null);
+    const initialTimeRef = useRef(initialTime);
 
-    // ID duy nhất cho mount (an toàn khi có nhiều player)
+    // luôn update ref
+    useEffect(() => {
+        initialTimeRef.current = initialTime || 0;
+    }, [initialTime]);
+
     const mountId = useMemo(
         () => `playerMount_${Math.random().toString(36).slice(2)}`,
         []
     );
 
-    // Khởi tạo player khi API sẵn sàng
     useEffect(() => {
         let destroyed = false;
 
@@ -74,17 +70,15 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
             if (destroyed) return;
 
             const mountEl =
-                mountRef.current || (document.getElementById(mountId) as HTMLDivElement | null);
+                mountRef.current ||
+                (document.getElementById(mountId) as HTMLDivElement | null);
             if (!mountEl) return;
 
-            // Nếu player đã có, chỉ nạp id mới
             if (playerRef.current) {
-                if (shouldPlay) {
-                    playerRef.current.loadVideoById(videoId, initialTime || 0);
-                } else {
-                    playerRef.current.cueVideoById(videoId, initialTime || 0);
-                }
-
+                playerRef.current.loadVideoById({
+                    videoId,
+                    startSeconds: initialTimeRef.current,
+                });
                 return;
             }
 
@@ -101,7 +95,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
                 },
                 events: {
                     onReady: (event: YT.PlayerEvent) => {
-                        // Đảm bảo iframe fill wrapper (phòng YouTube set width/height cứng)
+                        // ép iframe fill wrapper, không còn viền đen
                         try {
                             const iframe = event.target.getIframe?.();
                             if (iframe) {
@@ -110,34 +104,19 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
                                 iframe.style.position = "absolute";
                                 iframe.style.inset = "0";
                             }
-                        } catch {
-                            // fallback: query iframe con nếu cần
-                            const iframe =
-                                mountEl.querySelector("iframe") as HTMLIFrameElement | null;
-                            if (iframe) {
-                                iframe.style.width = "100%";
-                                iframe.style.height = "100%";
-                                iframe.style.position = "absolute";
-                                iframe.style.inset = "0";
-                            }
-                        }
+                        } catch { }
 
                         if (defaultPlaybackRate) {
-                            try {
-                                event.target.setPlaybackRate(defaultPlaybackRate);
-                            } catch { }
+                            event.target.setPlaybackRate(defaultPlaybackRate);
                         }
 
-                        if (initialTime) {
-                            try {
-                                event.target.seekTo(initialTime, true);
-                            } catch { }
+                        // ✅ Resume về thời gian đã lưu
+                        if (initialTimeRef.current > 0) {
+                            event.target.seekTo(initialTimeRef.current, true);
                         }
 
                         if (shouldPlay) {
-                            try {
-                                event.target.playVideo();
-                            } catch { }
+                            event.target.playVideo();
                         }
 
                         onReady?.(event.target);
@@ -146,14 +125,10 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
                         onStateChange?.(event);
 
                         if (!onTimeUpdate) return;
-
-                        // Clear interval cũ
                         if (timeIntervalRef.current) {
                             clearInterval(timeIntervalRef.current);
                             timeIntervalRef.current = null;
                         }
-
-                        // Tick mỗi giây khi đang phát
                         if (event.data === window.YT.PlayerState.PLAYING) {
                             timeIntervalRef.current = window.setInterval(() => {
                                 const t = playerRef.current?.getCurrentTime();
@@ -174,55 +149,35 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
             playerRef.current?.destroy();
             playerRef.current = null;
         };
-        // mountId chỉ tạo 1 lần
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [mountId]);
+    }, [mountId, videoId]);
 
-    // Đồng bộ khi videoId/initialTime đổi (không recreate player)
+    // Đồng bộ play/pause
     useEffect(() => {
         const p = playerRef.current;
         if (!p) return;
-        if (shouldPlay) {
-            p.loadVideoById({ videoId, startSeconds: initialTime || 0 });
-        } else {
-            p.cueVideoById({ videoId, startSeconds: initialTime || 0 });
-        }
-    }, [videoId, initialTime, shouldPlay]);
-
-    // Đồng bộ shouldPlay (play/pause)
-    useEffect(() => {
-        const p = playerRef.current;
-        if (!p) return;
-        try {
-            if (shouldPlay) p.playVideo();
-            else p.pauseVideo();
-        } catch { }
+        if (shouldPlay) p.playVideo();
+        else p.pauseVideo();
     }, [shouldPlay]);
 
-    // Đồng bộ playback rate
+    // Đồng bộ tốc độ
     useEffect(() => {
         const p = playerRef.current;
         if (!p || !defaultPlaybackRate) return;
-        try {
-            p.setPlaybackRate(defaultPlaybackRate);
-        } catch { }
+        p.setPlaybackRate(defaultPlaybackRate);
     }, [defaultPlaybackRate]);
 
-    // (Tuỳ chọn) set phụ đề động — có thể không luôn hiệu lực
+    // Đồng bộ phụ đề
     useEffect(() => {
         const p = playerRef.current;
         if (!p || !autoSubtitleLang) return;
-        try {
-            // @ts-ignore — setOption không đủ typings
-            p.setOption("captions", "track", { languageCode: autoSubtitleLang });
-        } catch { }
+        // @ts-ignore
+        p.setOption("captions", "track", { languageCode: autoSubtitleLang });
     }, [autoSubtitleLang]);
 
     return (
         <div className={`relative w-full bg-black ${className}`}>
-            {/* Wrapper giữ TỈ LỆ 16:9 */}
+            {/* giữ tỷ lệ 16:9, không viền đen */}
             <div className="relative w-full aspect-video">
-                {/* Mount player vào div con này, chiếm trọn wrapper */}
                 <div id={mountId} ref={mountRef} className="absolute inset-0" />
             </div>
         </div>
