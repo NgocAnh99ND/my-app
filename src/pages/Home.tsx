@@ -34,7 +34,7 @@ const Home = () => {
   // State cho search
   const [searchText, setSearchText] = useState("");
   const [youtubeLink, setYoutubeLink] = useState("");
-  const [suggestions, setSuggestions] = useState<string[]>([]);
+  // const [suggestions, setSuggestions] = useState<string[]>([]);
 
   const videoId = extractVideoId(videoUrl) || "M7lc1UVf-VE";
 
@@ -104,15 +104,15 @@ const Home = () => {
     // ✅ Lưu lại videoId mới
     localStorage.setItem(LAST_VIDEO_KEY, id);
   };
-  const handleSelectSuggestion = (link: string) => {
-    setYoutubeLink(link);
-    setSuggestions([]);
-  };
+  // const handleSelectSuggestion = (link: string) => {
+  //   setYoutubeLink(link);
+  //   setSuggestions([]);
+  // };
 
-  const handleYoutubeLinkFocus = () => {
-    const history = JSON.parse(localStorage.getItem("youtubeLinks") || "[]");
-    setSuggestions(history);
-  };
+  // const handleYoutubeLinkFocus = () => {
+  //   const history = JSON.parse(localStorage.getItem("youtubeLinks") || "[]");
+  //   setSuggestions(history);
+  // };
 
   return (
     <div className="flex flex-col w-full min-h-screen bg-gray-100">
