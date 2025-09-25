@@ -11,10 +11,11 @@ function extractVideoId(link: string) {
   const reg =
     /(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|v\/|shorts\/))([^\s&#?/]+)/;
   const match = link.match(reg);
-  return match ? match[1] : "M7lc1UVf-VE";
+  return match ? match[1] : "";
 }
 
 const LAST_TIME_KEY = "lastVideoTime";
+const LAST_VIDEO_KEY = "lastVideoId";
 
 const Home = () => {
   // State cho video
@@ -35,7 +36,7 @@ const Home = () => {
   const [youtubeLink, setYoutubeLink] = useState("");
   const [suggestions, setSuggestions] = useState<string[]>([]);
 
-  const videoId = extractVideoId(videoUrl);
+  const videoId = extractVideoId(videoUrl) || "M7lc1UVf-VE";
 
   // Hook player
   const {
@@ -48,12 +49,18 @@ const Home = () => {
     isPlaying,
   } = useYouTubePlayer();
 
-  // Khi load trang, đọc thời gian cuối cùng từ localStorage
+  // Khi load trang, đọc videoId + thời gian cuối cùng từ localStorage
   useEffect(() => {
+    const lastId = localStorage.getItem(LAST_VIDEO_KEY);
     const lastTimeStr = localStorage.getItem(LAST_TIME_KEY);
+
+    if (lastId) {
+      setVideoUrl(`https://www.youtube.com/watch?v=${lastId}`);
+    }
+
     const lastTime = lastTimeStr ? parseFloat(lastTimeStr) : 0;
     setInitialTime(lastTime);
-  }, [videoId]);
+  }, []);
 
   // Callback nhận thời gian hiện tại từ VideoPlayer
   const handleTimeUpdate = (currentTime: number) => {
@@ -89,7 +96,13 @@ const Home = () => {
     }
   };
   const handlePlayYoutubeLink = () => {
+    const id = extractVideoId(youtubeLink);
+    if (!id) return;
+
     setVideoUrl(youtubeLink);
+
+    // ✅ Lưu lại videoId mới
+    localStorage.setItem(LAST_VIDEO_KEY, id);
   };
   const handleSelectSuggestion = (link: string) => {
     setYoutubeLink(link);
