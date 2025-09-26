@@ -26,6 +26,7 @@ const Home = () => {
   const [customStep, setCustomStep] = useState(0.2);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [initialTime, setInitialTime] = useState(0);
+  const [showSearchBox, setShowSearchBox] = useState(false);
 
   // State cho phụ đề & tốc độ
   const [activateSubtitleAndSpeed, setActivateSubtitleAndSpeed] =
@@ -34,7 +35,6 @@ const Home = () => {
   // State cho search
   const [searchText, setSearchText] = useState("");
   const [youtubeLink, setYoutubeLink] = useState("");
-  // const [suggestions, setSuggestions] = useState<string[]>([]);
 
   const videoId = extractVideoId(videoUrl) || "M7lc1UVf-VE";
 
@@ -82,7 +82,9 @@ const Home = () => {
   // SearchBar
   const handleClearSearch = () => setSearchText("");
   const handleSearch = () => {
-    alert("Search: " + searchText);
+    if (!searchText.trim()) return;
+    localStorage.setItem("searchKeyword", searchText.trim());
+    window.location.href = "result.html"; // giống bản thuần
   };
 
   // YoutubeLinkInput
@@ -100,24 +102,13 @@ const Home = () => {
     if (!id) return;
 
     setVideoUrl(youtubeLink);
-
-    // ✅ Lưu lại videoId mới
-    localStorage.setItem(LAST_VIDEO_KEY, id);
+    localStorage.setItem(LAST_VIDEO_KEY, id); // lưu videoId mới
   };
-  // const handleSelectSuggestion = (link: string) => {
-  //   setYoutubeLink(link);
-  //   setSuggestions([]);
-  // };
-
-  // const handleYoutubeLinkFocus = () => {
-  //   const history = JSON.parse(localStorage.getItem("youtubeLinks") || "[]");
-  //   setSuggestions(history);
-  // };
 
   return (
     <div className="flex flex-col w-full min-h-screen bg-gray-100">
       {/* VideoPlayer */}
-      <div className="w-full">
+      <div className="w-full relative">
         <VideoPlayer
           videoId={videoId}
           className={
@@ -125,39 +116,48 @@ const Home = () => {
               ? "fixed top-0 left-0 w-screen h-[95vh] z-[1000]"
               : "w-full"
           }
-          initialTime={initialTime} // ✅ truyền lại thời điểm cũ
-          onTimeUpdate={handleTimeUpdate} // ✅ liên tục lưu thời điểm mới
+          initialTime={initialTime}
+          onTimeUpdate={handleTimeUpdate}
           defaultPlaybackRate={activateSubtitleAndSpeed ? 0.8 : undefined}
           autoSubtitleLang={activateSubtitleAndSpeed ? "en" : undefined}
           shouldPlay={true}
           onReady={handleReady}
           onStateChange={handleStateChange}
+          onToggleSearch={() => setShowSearchBox((s) => !s)}
         />
-      </div>
 
-      {/* SearchBar + YoutubeLinkInput */}
-      <div className="flex flex-col items-center w-full max-w-[800px] mt-2 gap-1">
-        <SearchBar
-          value={searchText}
-          onChange={setSearchText}
-          onClear={handleClearSearch}
-          onSearch={handleSearch}
-        />
-        <YoutubeLinkInput
-          value={youtubeLink}
-          onChange={setYoutubeLink}
-          onClear={handleClearYoutubeLink}
-          onPaste={handlePasteYoutubeLink}
-          onPlay={handlePlayYoutubeLink}
-          placeholder="Enter link YouTube..."
-        />
+        {/* ✅ SearchBox nổi trên video */}
+        {showSearchBox && (
+          <div
+            className="absolute top-0 left-1/2 -translate-x-1/2
+                       rounded-lg shadow-lg px-3
+                       flex flex-col items-center w-[90%] max-w-[600px]
+                       z-[2000]"
+          >
+            <SearchBar
+              value={searchText}
+              onChange={setSearchText}
+              onClear={handleClearSearch}
+              onSearch={handleSearch}
+            />
+            <YoutubeLinkInput
+              value={youtubeLink}
+              onChange={setYoutubeLink}
+              onClear={handleClearYoutubeLink}
+              onPaste={handlePasteYoutubeLink}
+              onPlay={handlePlayYoutubeLink}
+              placeholder="Enter link YouTube..."
+              className="mt-2"
+            />
+          </div>
+        )}
       </div>
 
       {/* NoteEditor */}
       <NoteEditor />
 
       {/* PlayerControls */}
-      <div className="flex w-full justify-center mt-2 mb-25">
+      <div className="flex w-full justify-center mt-2 mb-4">
         <PlayerControls
           seekSeconds={seekSeconds}
           setSeekSeconds={setSeekSeconds}
