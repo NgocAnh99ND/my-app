@@ -157,7 +157,7 @@ const Home = () => {
       <NoteEditor />
 
       {/* PlayerControls */}
-      <div className="flex w-full justify-center mt-2 mb-12">
+      <div className="flex w-full justify-center mt-2 mb-16">
         <PlayerControls
           seekSeconds={seekSeconds}
           setSeekSeconds={setSeekSeconds}
