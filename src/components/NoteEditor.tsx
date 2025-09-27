@@ -14,7 +14,8 @@ type TranscriptEntry = { sec: number; text: string };
 
 const SEEK_BACK_THRESHOLD = 1.5;
 const MIN_SEARCH_LEN = 6;
-const VIEWPORT_PAD = 130;
+
+const VIEWPORT_PAD = 130; // đẩy dòng trúng cách đỉnh ~130px
 
 const NOTE_PLACEHOLDER = `
 Dán theo cấu trúc:
@@ -29,8 +30,9 @@ Deep breath: hít một hơi thật sâu
 ...`;
 
 const headerRegex = /^\s*key\s*(?:-|:)?\s*vocab/i;
+const isIOS = /iP(ad|hone|od)/i.test(navigator.userAgent);
 
-/* ================= text utils ================= */
+/* ---------- utils ---------- */
 const timeToSec = (s: string) => {
     const p = s.trim().split(":").map(Number);
     if (p.some((n) => Number.isNaN(n))) return NaN;
@@ -93,7 +95,11 @@ function normalize(s: string) {
         .trim();
 }
 
-function buildVocabLineIndex(lines: string[], starts: number[], headerIdx: number) {
+function buildVocabLineIndex(
+    lines: string[],
+    starts: number[],
+    headerIdx: number
+) {
     const out: { start: number; end: number; raw: string; norm: string }[] = [];
     const begin = headerIdx >= 0 ? headerIdx + 1 : lines.length;
     for (let i = begin; i < lines.length; i++) {
@@ -123,7 +129,8 @@ function findInVocabulary(
 }
 
 function firstIdxAfter(entries: TranscriptEntry[], t: number) {
-    let lo = 0, hi = entries.length;
+    let lo = 0,
+        hi = entries.length;
     while (lo < hi) {
         const mid = (lo + hi) >> 1;
         if (entries[mid].sec > t) hi = mid;
@@ -132,49 +139,85 @@ function firstIdxAfter(entries: TranscriptEntry[], t: number) {
     return lo;
 }
 
-/* ================= hybrid editor helpers ================= */
-/** Convert chỉ số ký tự (start/end) -> DOM Range trong mirror */
-function rangeByChar(
-    root: HTMLElement,
-    start: number,
-    end: number
-): Range | null {
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
-    function locate(pos: number) {
-        let remaining = pos;
-        let n: Node | null;
-        while ((n = walker.nextNode())) {
-            const t = n as Text;
-            const len = t.data.length;
-            if (remaining <= len) return { node: t, offset: remaining };
-            remaining -= len;
-        }
-        return null;
-    }
-    const s = Math.max(0, Math.min(start, root.innerText.length));
-    const e = Math.max(s, Math.min(end, root.innerText.length));
-    const sPos = locate(s);
-    const ePos = (() => {
-        // walker đã ở cuối, tạo walker mới để tìm end
-        const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
-        let remain = e;
-        let nn: Node | null;
-        while ((nn = w.nextNode())) {
-            const t = nn as Text;
-            const len = t.data.length;
-            if (remain <= len) return { node: t, offset: remain };
-            remain -= len;
-        }
-        return null;
-    })();
-
-    if (!sPos || !ePos) return null;
-    const rg = document.createRange();
-    rg.setStart(sPos.node, sPos.offset);
-    rg.setEnd(ePos.node, ePos.offset);
-    return rg;
+/* ---------- mirror đo offset ---------- */
+function copyTextareaStylesToMirror(ta: HTMLTextAreaElement, mirror: HTMLDivElement) {
+    const cs = getComputedStyle(ta);
+    const props = [
+        "fontFamily",
+        "fontSize",
+        "fontStyle",
+        "fontWeight",
+        "lineHeight",
+        "letterSpacing",
+        "textTransform",
+        "textIndent",
+        "textAlign",
+        "paddingTop",
+        "paddingRight",
+        "paddingBottom",
+        "paddingLeft",
+        "borderTopWidth",
+        "borderRightWidth",
+        "borderBottomWidth",
+        "borderLeftWidth",
+        "boxSizing",
+        "wordBreak",
+        "overflowWrap",
+    ] as const;
+    mirror.style.whiteSpace = "pre-wrap";
+    mirror.style.wordBreak = "break-word";
+    mirror.style.overflowWrap = "anywhere";
+    mirror.style.position = "fixed";
+    mirror.style.visibility = "hidden";
+    mirror.style.zIndex = "-1";
+    mirror.style.left = "-9999px";
+    mirror.style.top = "-9999px";
+    mirror.style.width = ta.clientWidth + "px";
+    props.forEach((p) => {
+        // @ts-ignore
+        mirror.style[p] = cs[p] as any;
+    });
 }
 
+/** Đo toạ độ top (pixel) của vị trí `idx` trong content, theo wrap thật */
+function measureOffsetTopPx(
+    ta: HTMLTextAreaElement,
+    mirror: HTMLDivElement,
+    content: string,
+    idx: number
+) {
+    copyTextareaStylesToMirror(ta, mirror);
+    mirror.textContent = content.slice(0, idx);
+    const marker = document.createElement("span");
+    marker.textContent = "\u200b";
+    mirror.appendChild(marker);
+    const top = marker.offsetTop;
+    mirror.textContent = "";
+    return top;
+}
+
+/** Cuộn *bên trong* textarea — có “nudge” cho iOS */
+function scrollTextareaTo(ta: HTMLTextAreaElement, top: number) {
+    const target = Math.max(0, top);
+    try { (ta as any).scrollTop = target; } catch { }
+
+    if (isIOS) {
+        const prev = (ta.style as any).WebkitOverflowScrolling;
+        try {
+            (ta.style as any).WebkitOverflowScrolling = "auto";
+            // force reflow
+            // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+            ta.offsetHeight;
+            (ta as any).scrollTop = target;
+        } finally {
+            requestAnimationFrame(() => {
+                (ta.style as any).WebkitOverflowScrolling = prev || "touch";
+            });
+        }
+    }
+}
+
+/* ==================== Component ==================== */
 const NoteEditor: FC<NoteEditorProps> = ({ currentTime = 0 }) => {
     const [title, setTitle] = useState("");
     const [content, setContent] = useState("");
@@ -184,7 +227,7 @@ const NoteEditor: FC<NoteEditorProps> = ({ currentTime = 0 }) => {
     const [suggestions, setSuggestions] = useState<string[]>([]);
     const [showSuggestions, setShowSuggestions] = useState(false);
 
-    // dữ liệu parse
+    // dữ liệu đã parse
     const [entries, setEntries] = useState<TranscriptEntry[]>([]);
     const [vocabStart, setVocabStart] = useState(0);
     const [vocabIndex, setVocabIndex] = useState<ReturnType<typeof buildVocabLineIndex>>([]);
@@ -193,23 +236,22 @@ const NoteEditor: FC<NoteEditorProps> = ({ currentTime = 0 }) => {
     const [nextIdx, setNextIdx] = useState(0);
     const prevTimeRef = useRef(0);
 
-    // Hybrid editor refs
-    const wrapRef = useRef<HTMLDivElement | null>(null);     // khung cuộn
-    const mirrorRef = useRef<HTMLDivElement | null>(null);   // hiển thị chữ (thấy được)
-    const inputRef = useRef<HTMLTextAreaElement | null>(null); // textarea chồng lên (ẩn)
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const titleWrapperRef = useRef<HTMLDivElement>(null);
+    const mirrorRef = useRef<HTMLDivElement>(null);
 
-    // Ẩn gợi ý tiêu đề khi click ngoài
-    const titleWrapperRef = useRef<HTMLDivElement | null>(null);
+    /* Ẩn gợi ý tiêu đề khi click ngoài */
     useEffect(() => {
         const handleClickOutside = (e: MouseEvent) => {
-            const wrap = titleWrapperRef.current;
-            if (wrap && !wrap.contains(e.target as Node)) setShowSuggestions(false);
+            if (titleWrapperRef.current && !titleWrapperRef.current.contains(e.target as Node)) {
+                setShowSuggestions(false);
+            }
         };
         document.addEventListener("mousedown", handleClickOutside);
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
-    /* Parse khi content thay đổi */
+    /* Parse lại khi content thay đổi */
     useEffect(() => {
         const { lines, starts, headerIdx, vocabStart } = locateVocabulary(content);
         setVocabStart(vocabStart);
@@ -217,78 +259,45 @@ const NoteEditor: FC<NoteEditorProps> = ({ currentTime = 0 }) => {
         setEntries(es);
         setVocabIndex(buildVocabLineIndex(lines, starts, headerIdx));
         setNextIdx(firstIdxAfter(es, prevTimeRef.current));
-
-        // đồng bộ mirror text (tránh dùng dangerouslySetInnerHTML)
-        if (mirrorRef.current) {
-            mirrorRef.current.textContent = content;
-        }
     }, [content]);
 
-    /* Đồng bộ input <textarea> khi mount/clear/paste */
-    useEffect(() => {
-        if (inputRef.current && inputRef.current.value !== content) {
-            inputRef.current.value = content;
-        }
-    }, [content]);
-
-    /* Auto-scroll theo currentTime — cuộn TRONG khung wrap (div) */
+    /* Đồng bộ theo thời gian: chỉ cuộn khi vượt mốc kế tiếp */
     useEffect(() => {
         const prev = prevTimeRef.current;
         prevTimeRef.current = currentTime;
 
-        const wrap = wrapRef.current;
+        const ta = textareaRef.current;
         const mirror = mirrorRef.current;
-        const input = inputRef.current;
-        if (!wrap || !mirror || !input || entries.length === 0) return;
+        if (!ta || !mirror || entries.length === 0) return;
 
-        // Seek lùi → reset mốc
+        // Seek lùi: reset mốc
         if (currentTime < prev - SEEK_BACK_THRESHOLD) {
             setNextIdx(firstIdxAfter(entries, currentTime));
             return;
         }
+
         if (nextIdx >= entries.length || currentTime < entries[nextIdx].sec) return;
 
-        // Nhảy qua nhiều mốc → lấy mốc cuối <= currentTime
+        // nếu nhảy qua nhiều mốc trong 1 tick → lấy mốc cuối <= currentTime
         let j = nextIdx;
         while (j + 1 < entries.length && currentTime >= entries[j + 1].sec) j++;
 
         const text = entries[j].text.trim();
         setNextIdx(j + 1);
+
         if (text.length < MIN_SEARCH_LEN) return;
 
         const hit = findInVocabulary(content, vocabStart, text, vocabIndex);
         if (!hit) return;
 
-        // Đặt selection trong <textarea> để thao tác copy/edit vẫn đúng,
-        // nhưng SCROLL bằng mirror + wrap (ổn định trên iOS)
-        try { input.focus({ preventScroll: true } as any); } catch { }
-        try { input.setSelectionRange(hit.start, hit.end); } catch { }
+        try { ta.focus({ preventScroll: true } as any); } catch { }
+        try { ta.setSelectionRange(hit.start, hit.end); } catch { }
 
-        requestAnimationFrame(() => {
-            const rg = rangeByChar(mirror, hit.start, hit.end);
-            if (!rg) return;
-            const rect = rg.getBoundingClientRect();
-            const wrapRect = wrap.getBoundingClientRect();
-            const deltaTop = rect.top - wrapRect.top;
-            const targetTop = Math.max(0, wrap.scrollTop + deltaTop - VIEWPORT_PAD);
-
-            const anyWrap = wrap as any;
-            try {
-                if (typeof anyWrap.scrollTo === "function") {
-                    anyWrap.scrollTo({ top: targetTop, behavior: "smooth" });
-                } else {
-                    anyWrap.scrollTop = targetTop;
-                }
-            } catch {
-                (wrap as any).scrollTop = targetTop;
-            }
-
-            // Sync scroll của textarea cho caret không lệch
-            input.scrollTop = wrap.scrollTop;
-        });
+        const topPx = measureOffsetTopPx(ta, mirror, content, hit.start);
+        scrollTextareaTo(ta, Math.max(0, topPx - VIEWPORT_PAD));
     }, [currentTime, entries, nextIdx, content, vocabStart, vocabIndex]);
 
-    /* ===== CRUD ghi chú ===== */
+    /* --------- CRUD ghi chú --------- */
     const fetchNotes = (keyword = "") => {
         const notes: string[] = [];
         for (let i = 0; i < localStorage.length; i++) {
@@ -310,32 +319,20 @@ const NoteEditor: FC<NoteEditorProps> = ({ currentTime = 0 }) => {
     };
 
     const handleTitleChange = (v: string) => { setTitle(v); fetchNotes(v); };
+
     const handleSelectSuggestion = (noteTitle: string) => {
-        const txt = localStorage.getItem("note_" + noteTitle) ?? "";
         setTitle(noteTitle);
-        setContent(txt);
+        setContent(localStorage.getItem("note_" + noteTitle) ?? "");
         setShowSuggestions(false);
-        if (mirrorRef.current) mirrorRef.current.textContent = txt;
-        if (inputRef.current) inputRef.current.value = txt;
     };
 
     const handleClearTitle = () => setTitle("");
-    const handleClearContent = () => {
-        setContent("");
-        if (mirrorRef.current) mirrorRef.current.textContent = "";
-        if (inputRef.current) inputRef.current.value = "";
-    };
+    const handleClearContent = () => setContent("");
     const handleClearSearchArea = () => setSearchArea("");
 
     const handlePasteContent = async () => {
-        try {
-            const text = await navigator.clipboard.readText();
-            setContent(text);
-            if (mirrorRef.current) mirrorRef.current.textContent = text;
-            if (inputRef.current) inputRef.current.value = text;
-        } catch {
-            alert("Không thể lấy dữ liệu clipboard");
-        }
+        try { const text = await navigator.clipboard.readText(); setContent(text); }
+        catch { alert("Không thể lấy dữ liệu clipboard"); }
     };
 
     const handleSaveNote = () => {
@@ -359,44 +356,20 @@ const NoteEditor: FC<NoteEditorProps> = ({ currentTime = 0 }) => {
         }
         alert(`Đã xoá ${removed} bản lưu!`);
         setSuggestions([]); setShowSuggestions(false);
-        setTitle(""); setContent(""); setNextIdx(0);
-        if (mirrorRef.current) mirrorRef.current.textContent = "";
-        if (inputRef.current) inputRef.current.value = "";
+        setTitle(""); setContent("");
+        setNextIdx(0);
     };
 
-    /* ===== Search: Enter + nút 🔍 ===== */
+    // ---- Search: dùng chung cho Enter & nút 🔍 ----
     const doSearch = () => {
-        const wrap = wrapRef.current;
-        const mirror = mirrorRef.current;
-        const input = inputRef.current;
-        if (!searchArea.trim() || !wrap || !mirror || !input) return;
-
+        if (!searchArea.trim() || !textareaRef.current || !mirrorRef.current) return;
+        const ta = textareaRef.current;
         const idx = content.toLowerCase().indexOf(searchArea.toLowerCase());
         if (idx !== -1) {
-            try { input.focus({ preventScroll: true } as any); } catch { }
-            requestAnimationFrame(() => {
-                const rg = rangeByChar(mirror, idx, idx + searchArea.length);
-                if (!rg) return;
-                const rect = rg.getBoundingClientRect();
-                const wrapRect = wrap.getBoundingClientRect();
-                const deltaTop = rect.top - wrapRect.top;
-                const targetTop = Math.max(0, wrap.scrollTop + deltaTop - VIEWPORT_PAD);
-
-                const anyWrap = wrap as any;
-                try {
-                    if (typeof anyWrap.scrollTo === "function") {
-                        anyWrap.scrollTo({ top: targetTop, behavior: "smooth" });
-                    } else {
-                        anyWrap.scrollTop = targetTop;
-                    }
-                } catch {
-                    (wrap as any).scrollTop = targetTop;
-                }
-
-                // đặt selection thật trong textarea (cho copy/edit)
-                try { input.setSelectionRange(idx, idx + searchArea.length); } catch { }
-                input.scrollTop = wrap.scrollTop;
-            });
+            try { ta.focus({ preventScroll: true } as any); } catch { }
+            try { ta.setSelectionRange(idx, idx + searchArea.length); } catch { }
+            const topPx = measureOffsetTopPx(ta, mirrorRef.current, content, idx);
+            scrollTextareaTo(ta, Math.max(0, topPx - VIEWPORT_PAD));
         } else {
             alert("Không tìm thấy từ cần tìm.");
         }
@@ -407,7 +380,7 @@ const NoteEditor: FC<NoteEditorProps> = ({ currentTime = 0 }) => {
         doSearch();
     };
 
-    /* ===== Render ===== */
+    /* ---------------- render ---------------- */
     return (
         <div className="flex-1 relative bg-white p-3 rounded-xl w-full max-w-[725px] shadow-lg flex flex-col mt-2">
             {/* Tiêu đề + gợi ý */}
@@ -433,55 +406,19 @@ const NoteEditor: FC<NoteEditorProps> = ({ currentTime = 0 }) => {
                 )}
             </div>
 
-            {/* Hybrid editor */}
+            {/* Nội dung ghi chú */}
             <div className="flex-1 flex flex-col mb-2 relative">
-                {/* Placeholder khi rỗng */}
-                {content.trim().length === 0 && (
-                    <div className="pointer-events-none absolute left-3 top-2 text-gray-400 whitespace-pre-wrap">
-                        {NOTE_PLACEHOLDER}
-                    </div>
-                )}
-
-                {/* Khung cuộn (div) */}
-                <div
-                    ref={wrapRef}
-                    className="relative flex-1 w-full rounded border border-gray-300 box-border text-base leading-[25px] focus-within:border-blue-500"
-                    style={{
-                        overflowY: "auto",
-                        WebkitOverflowScrolling: "touch",
-                    }}
-                >
-                    {/* Lớp hiển thị mirror (thấy chữ) */}
-                    <div
-                        ref={mirrorRef}
-                        className="absolute inset-0 p-2 whitespace-pre-wrap break-words"
-                        aria-hidden="false"
-                    />
-
-                    {/* Textarea nhận input (chồng lên, trong suốt) */}
-                    <textarea
-                        ref={inputRef}
-                        defaultValue={content}
-                        spellCheck={false}
-                        onInput={(e) => {
-                            const v = (e.currentTarget.value ?? "").replace(/\r/g, "");
-                            setContent(v);
-                            if (mirrorRef.current) mirrorRef.current.textContent = v;
-                        }}
-                        className="absolute inset-0 p-2 w-full h-full resize-none bg-transparent text-transparent caret-black outline-none"
-                        style={{
-                            // dùng đúng font/line-height để caret & selection khớp vị trí
-                            fontFamily: "inherit",
-                            fontSize: "inherit",
-                            lineHeight: "25px",
-                            letterSpacing: "inherit",
-                            // cho iOS cuộn mượt khi người dùng kéo tay
-                            WebkitOverflowScrolling: "touch",
-                            // selection vẫn hoạt động (màu caret đen, chữ transparent)
-                            // nếu muốn thấy selection, có thể tô overlay riêng.
-                        }}
-                    />
-                </div>
+                <textarea
+                    ref={textareaRef}
+                    value={content}
+                    onChange={(e) => setContent(e.target.value)}
+                    placeholder={NOTE_PLACEHOLDER}
+                    className="flex-1 w-full p-2 rounded border border-gray-300 resize-none box-border text-base leading-[25px] focus:border-blue-500 focus:outline-none"
+                    style={{ WebkitOverflowScrolling: "touch", overflowY: "auto" }}
+                    spellCheck={false}
+                />
+                {/* mirror ẩn để đo toạ độ — giữ trong DOM để sẵn sàng đo */}
+                <div ref={mirrorRef} aria-hidden="true" />
 
                 {content && (
                     <IconButton
@@ -492,7 +429,7 @@ const NoteEditor: FC<NoteEditorProps> = ({ currentTime = 0 }) => {
                 )}
             </div>
 
-            {/* Footer: Search + actions */}
+            {/* Footer: Search (Enter + nút) + actions */}
             <div className="flex items-center justify-end gap-2 mt-2">
                 <form
                     onSubmit={handleSearchSubmit}
@@ -531,17 +468,9 @@ const NoteEditor: FC<NoteEditorProps> = ({ currentTime = 0 }) => {
                 <IconButton
                     icon={<img src="/icons/arrow-up.svg" alt="Scroll lên đầu" width={20} height={20} />}
                     onClick={() => {
-                        const wrap = wrapRef.current;
-                        const input = inputRef.current;
-                        if (!wrap) return;
-                        const anyWrap = wrap as any;
-                        try {
-                            if (typeof anyWrap.scrollTo === "function") anyWrap.scrollTo({ top: 0, behavior: "smooth" });
-                            else anyWrap.scrollTop = 0;
-                        } catch {
-                            (wrap as any).scrollTop = 0;
-                        }
-                        if (input) input.scrollTop = 0;
+                        const ta = textareaRef.current;
+                        if (!ta) return;
+                        scrollTextareaTo(ta, 0);
                     }}
                     className="bg-gray-100 hover:bg-gray-200 rounded-full h-[30px] w-[30px]"
                 />
@@ -559,6 +488,14 @@ const NoteEditor: FC<NoteEditorProps> = ({ currentTime = 0 }) => {
                     className="bg-gray-300 hover:bg-red-500 rounded h-[30px] w-[30px]"
                 />
             </div>
+
+            {entries.length > 0 && (
+                <div className="absolute left-3 bottom-3 text-xs text-gray-500 space-x-3">
+                    <span>Transcript lines: {entries.length}</span>
+                    <span>t={currentTime?.toFixed(1)}s</span>
+                    <span>nextIdx={Math.min(nextIdx, entries.length)}</span>
+                </div>
+            )}
         </div>
     );
 };
