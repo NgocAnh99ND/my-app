@@ -34,6 +34,9 @@ export default function Home() {
   const [searchText, setSearchText] = useState("");
   const [youtubeLink, setYoutubeLink] = useState("");
 
+  // NEW: giữ từ khóa đã tìm gần nhất để hiện nút ↪ đi tới Result
+  const [lastSearch, setLastSearch] = useState<string>(() => localStorage.getItem("searchKeyword") || "");
+
   const videoId = extractVideoId(videoUrl) || "M7lc1UVf-VE";
 
   const {
@@ -56,7 +59,7 @@ export default function Home() {
         localStorage.setItem(LAST_VIDEO_KEY, id);
         localStorage.setItem(LAST_TIME_KEY, "0");
         setInitialTime(0);
-        setCurrentTime(0); // NEW: reset đồng bộ
+        setCurrentTime(0);
       }
       localStorage.removeItem("selectedVideoUrl");
       return;
@@ -69,6 +72,15 @@ export default function Home() {
     const lastTime = lastTimeStr ? parseFloat(lastTimeStr) : 0;
     setInitialTime(isFinite(lastTime) ? lastTime : 0);
     setCurrentTime(isFinite(lastTime) ? lastTime : 0);
+  }, []);
+
+  // Đồng bộ lastSearch khi storage thay đổi (nếu search ở trang Result)
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === "searchKeyword") setLastSearch(e.newValue || "");
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
   }, []);
 
   // NEW: vừa lưu localStorage, vừa đẩy xuống NoteEditor
@@ -88,6 +100,7 @@ export default function Home() {
     if (!searchText.trim()) return;
     const kw = searchText.trim();
     localStorage.setItem("searchKeyword", kw);
+    setLastSearch(kw); // NEW: cập nhật state để nút đi tới Result luôn đúng
     navigate(`/result?keyword=${encodeURIComponent(kw)}`);
   };
 
@@ -108,8 +121,17 @@ export default function Home() {
     localStorage.setItem(LAST_VIDEO_KEY, id);
     localStorage.setItem(LAST_TIME_KEY, "0");
     setInitialTime(0);
-    setCurrentTime(0); // NEW: reset đồng bộ
+    setCurrentTime(0);
   };
+
+  // NEW: mở lại Result với từ khóa gần nhất (nếu có)
+  const goToLastResult = () => {
+    const kw = (localStorage.getItem("searchKeyword") || lastSearch).trim();
+    if (kw) navigate(`/result?keyword=${encodeURIComponent(kw)}`);
+    else navigate("/result");
+  };
+
+  const showGoResult = true; // luôn hiện nút; muốn ẩn khi không có keyword: const showGoResult = !!lastSearch;
 
   return (
     <div className="flex flex-col w-full min-h-screen bg-gray-100">
@@ -118,7 +140,7 @@ export default function Home() {
           videoId={videoId}
           className={isFullscreen ? "fixed top-0 left-0 w-screen h-[95vh] z-[1000]" : "w-full"}
           initialTime={initialTime}
-          onTimeUpdate={handleTimeUpdate}        // NEW: cập nhật currentTime
+          onTimeUpdate={handleTimeUpdate}
           defaultPlaybackRate={activateSubtitleAndSpeed ? 0.8 : undefined}
           autoSubtitleLang={activateSubtitleAndSpeed ? "en" : undefined}
           shouldPlay={true}
@@ -126,6 +148,21 @@ export default function Home() {
           onStateChange={handleStateChange}
           onToggleSearch={() => setShowSearchBox((s) => !s)}
         />
+
+        {/* ✅ Nút mũi tên sang phải (góc trên-phải) để mở lại trang Result */}
+        {showGoResult && (
+          <button
+            onClick={goToLastResult}
+            aria-label={lastSearch ? `Mở kết quả cho "${lastSearch}"` : "Mở trang kết quả"}
+            className={`fixed top-2 right-2 z-[1600] w-11 h-11 rounded-full shadow
+              ${lastSearch ? "bg-gray-500 hover:bg-red-500" : "bg-gray-300 hover:bg-gray-300 cursor-pointer"}
+              text-white flex items-center justify-center active:translate-y-px`}
+            title={lastSearch ? `Go to results: ${lastSearch}` : "Go to results"}
+          >
+            {/* Dùng ký tự để tránh phụ thuộc file icon */}
+            <span className="text-xl leading-none">→</span>
+          </button>
+        )}
 
         {showSearchBox && (
           <div className="absolute top-0 left-1/2 -translate-x-1/2 rounded-lg shadow-lg px-3 flex flex-col items-center w-[90%] max-w-[600px] z-[2000]">
@@ -148,7 +185,7 @@ export default function Home() {
         )}
       </div>
 
-      {/* NEW: truyền currentTime thật vào NoteEditor để auto-scroll phần giải thích */}
+      {/* Truyền currentTime vào NoteEditor để auto-scroll phần giải thích */}
       <NoteEditor currentTime={currentTime} />
 
       <div className="flex w-full justify-center mt-2 mb-20">
