@@ -1,4 +1,6 @@
+// src/pages/Home.tsx
 import { useState, useEffect } from "react";
+import { useNavigate, Link } from "react-router-dom";
 import VideoPlayer from "../components/VideoPlayer";
 import PlayerControls from "../components/PlayerControls";
 import SearchBar from "../components/SearchBar";
@@ -18,7 +20,9 @@ const LAST_TIME_KEY = "lastVideoTime";
 const LAST_VIDEO_KEY = "lastVideoId";
 
 const Home = () => {
-  // State cho video
+  const navigate = useNavigate();
+
+  // State video
   const [videoUrl, setVideoUrl] = useState(
     "https://www.youtube.com/watch?v=M7lc1UVf-VE"
   );
@@ -28,13 +32,21 @@ const Home = () => {
   const [initialTime, setInitialTime] = useState(0);
   const [showSearchBox, setShowSearchBox] = useState(false);
 
-  // State cho phụ đề & tốc độ
+  // Phụ đề & tốc độ
   const [activateSubtitleAndSpeed, setActivateSubtitleAndSpeed] =
     useState(false);
 
-  // State cho search
+  // Search state
   const [searchText, setSearchText] = useState("");
   const [youtubeLink, setYoutubeLink] = useState("");
+
+  // ✅ Thêm: theo dõi thời gian hiện tại để truyền cho NoteEditor
+  const [currentTime, setCurrentTime] = useState(0);
+
+  // Dùng để nút "→ Result" nhớ keyword gần nhất
+  const [lastKeyword, setLastKeyword] = useState<string>(
+    () => localStorage.getItem("searchKeyword") || ""
+  );
 
   const videoId = extractVideoId(videoUrl) || "M7lc1UVf-VE";
 
@@ -49,7 +61,7 @@ const Home = () => {
     isPlaying,
   } = useYouTubePlayer();
 
-  // Khi load trang, đọc videoId + thời gian cuối cùng từ localStorage
+  // Khi load trang, đọc videoId + thời gian cuối cùng
   useEffect(() => {
     const lastId = localStorage.getItem(LAST_VIDEO_KEY);
     const lastTimeStr = localStorage.getItem(LAST_TIME_KEY);
@@ -60,11 +72,13 @@ const Home = () => {
 
     const lastTime = lastTimeStr ? parseFloat(lastTimeStr) : 0;
     setInitialTime(lastTime);
+    setCurrentTime(lastTime);
   }, []);
 
-  // Callback nhận thời gian hiện tại từ VideoPlayer
-  const handleTimeUpdate = (currentTime: number) => {
-    localStorage.setItem(LAST_TIME_KEY, String(currentTime));
+  // ✅ Callback nhận thời gian hiện tại từ VideoPlayer (gọi mỗi giây)
+  const handleTimeUpdate = (t: number) => {
+    localStorage.setItem(LAST_TIME_KEY, String(t));
+    setCurrentTime(t); // ← rất quan trọng cho NoteEditor
   };
 
   // Tăng/giảm bước tua
@@ -83,8 +97,10 @@ const Home = () => {
   const handleClearSearch = () => setSearchText("");
   const handleSearch = () => {
     if (!searchText.trim()) return;
-    localStorage.setItem("searchKeyword", searchText.trim());
-    window.location.href = "result.html"; // giống bản thuần
+    const kw = searchText.trim();
+    localStorage.setItem("searchKeyword", kw);
+    setLastKeyword(kw); // để nút "→" cập nhật ngay
+    navigate(`/result?keyword=${encodeURIComponent(kw)}`);
   };
 
   // YoutubeLinkInput
@@ -107,7 +123,7 @@ const Home = () => {
 
   return (
     <div className="flex flex-col w-full min-h-screen bg-gray-100">
-      {/* VideoPlayer */}
+      {/* Vùng video + nút ở góc */}
       <div className="w-full relative">
         <VideoPlayer
           videoId={videoId}
@@ -117,7 +133,7 @@ const Home = () => {
               : "w-full"
           }
           initialTime={initialTime}
-          onTimeUpdate={handleTimeUpdate}
+          onTimeUpdate={handleTimeUpdate}   // ✅ rất quan trọng
           defaultPlaybackRate={activateSubtitleAndSpeed ? 0.8 : undefined}
           autoSubtitleLang={activateSubtitleAndSpeed ? "en" : undefined}
           shouldPlay={true}
@@ -126,7 +142,18 @@ const Home = () => {
           onToggleSearch={() => setShowSearchBox((s) => !s)}
         />
 
-        {/* ✅ SearchBox nổi trên video */}
+        {/* ✅ Nút "→" góc trên phải: quay lại Result với keyword gần nhất */}
+        <div className="absolute top-2 right-2 z-[1600]">
+          <Link
+            to={lastKeyword ? `/result?keyword=${encodeURIComponent(lastKeyword)}` : "/result"}
+            className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-red-600 text-white hover:bg-red-700"
+            title={lastKeyword ? `Đến kết quả: "${lastKeyword}"` : "Đến trang kết quả"}
+          >
+            →
+          </Link>
+        </div>
+
+        {/* SearchBox nổi */}
         {showSearchBox && (
           <div
             className="absolute top-0 left-1/2 -translate-x-1/2
@@ -153,8 +180,8 @@ const Home = () => {
         )}
       </div>
 
-      {/* NoteEditor */}
-      <NoteEditor />
+      {/* NoteEditor nhận currentTime để tự cuộn đến dòng giải thích phù hợp */}
+      <NoteEditor currentTime={currentTime} />
 
       {/* PlayerControls */}
       <div className="flex w-full justify-center mt-2 mb-20">

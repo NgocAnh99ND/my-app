@@ -12,6 +12,7 @@ export type VideoPlayerProps = {
   onReady?: (player: YT.Player) => void;
   onStateChange?: (event: YT.OnStateChangeEvent) => void;
   onToggleSearch?: () => void; // ✅ callback toggle SearchBox
+  timePollMs?: number; // mặc định 500ms
 };
 
 const YT_SCRIPT_SRC = "https://www.youtube.com/iframe_api";
@@ -49,6 +50,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   onReady,
   onStateChange,
   onToggleSearch,
+  timePollMs = 500,
 }) => {
   const playerRef = useRef<YT.Player | null>(null);
   const mountRef = useRef<HTMLDivElement | null>(null);
@@ -106,7 +108,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
                 iframe.style.position = "absolute";
                 iframe.style.inset = "0";
               }
-            } catch {}
+            } catch { }
 
             if (defaultPlaybackRate) {
               event.target.setPlaybackRate(defaultPlaybackRate);
@@ -135,7 +137,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
               timeIntervalRef.current = window.setInterval(() => {
                 const t = playerRef.current?.getCurrentTime();
                 if (typeof t === "number") onTimeUpdate(t);
-              }, 1000);
+              }, timePollMs);
             }
           },
         },
