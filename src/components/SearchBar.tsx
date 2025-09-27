@@ -1,4 +1,4 @@
-import type { FC } from "react";
+import type { FC, FormEvent } from "react";
 import { useState } from "react";
 import Input from "./Input";
 import IconButton from "./IconButton";
@@ -8,7 +8,7 @@ type SearchBarProps = {
     value: string;
     onChange: (v: string) => void;
     onClear: () => void;
-    onSearch: () => void;
+    onSearch: () => void;          // sẽ được gọi khi submit (Enter) hoặc bấm nút
     placeholder?: string;
     className?: string;
 };
@@ -56,17 +56,11 @@ const SearchBar: FC<SearchBarProps> = ({
         setShowSuggestions(filtered.length > 0);
     };
 
-    const handleFocus = () => {
-        refreshSuggestions(value);
-    };
-
-    const handleClick = () => {
-        refreshSuggestions(value);
-    };
+    const handleFocus = () => refreshSuggestions(value);
+    const handleClick = () => refreshSuggestions(value);
 
     const handleChange = (v: string) => {
         onChange(v);
-        // cập nhật gợi ý theo nội dung đang gõ
         refreshSuggestions(v);
     };
 
@@ -80,26 +74,31 @@ const SearchBar: FC<SearchBarProps> = ({
         setShowSuggestions(false);
     };
 
-    const handleSearchClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+    // ✅ Submit chung cho Enter (desktop/mobile) và nút 🔍
+    const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
         e.preventDefault();
-        // lưu lịch sử trước, rồi gọi onSearch bên ngoài
+        if (!value.trim()) return;
         saveHistory(value);
         onSearch();
-        // cập nhật gợi ý mới nhất (đưa term vừa tìm lên đầu)
         refreshSuggestions(value);
     };
 
     return (
         <div className={`relative w-full max-w-[560px] ${className}`}>
-            <div className="flex items-center border border-blue-500 rounded-full overflow-hidden bg-white h-10 w-full">
+            <form
+                onSubmit={handleSubmit}
+                className="flex items-center border border-blue-500 rounded-full overflow-hidden bg-white h-10 w-full"
+            >
                 <Input
-                    type="text"
+                    type="search"
                     value={value}
                     onChange={(e) => handleChange(e.target.value)}
                     placeholder={placeholder}
                     className="flex-1 border-none outline-none px-3 pr-10 text-base"
                     onFocus={handleFocus}
                     onClick={handleClick}
+                    enterKeyHint="search"       // mobile: hiện nút "Search"
+                    autoComplete="off"
                 />
 
                 {/* Nút clear input */}
@@ -112,16 +111,15 @@ const SearchBar: FC<SearchBarProps> = ({
                     />
                 )}
 
-                {/* Nút search */}
+                {/* Nút search (cũng submit form) */}
                 <button
-                    type="button"
-                    onClick={handleSearchClick}
+                    type="submit"
                     aria-label="Thực hiện tìm kiếm"
                     className="border-none bg-gray-100 px-4 cursor-pointer text-lg h-full rounded-r-full"
                 >
                     🔍
                 </button>
-            </div>
+            </form>
 
             {/* Gợi ý dưới ô input */}
             {showSuggestions && (

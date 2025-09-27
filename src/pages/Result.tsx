@@ -1,141 +1,114 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import SearchBar from "../components/SearchBar";
-import ResultList from "../components/ResultList";
 
-const API_KEY = import.meta.env.VITE_YT_API_KEY || "";
-
-type YTSearchItem = {
+type YTItem = {
     id: { videoId: string };
-    snippet: {
-        title: string;
-        thumbnails: { medium: { url: string } };
-    };
+    snippet: { title: string; thumbnails?: { medium?: { url?: string } } };
 };
 
 export default function Result() {
     const navigate = useNavigate();
     const [params] = useSearchParams();
-
-    const initialKeyword =
-        params.get("keyword") ?? localStorage.getItem("searchKeyword") ?? "";
-
-    const [keyword, setKeyword] = useState(initialKeyword);
-    const [items, setItems] = useState<YTSearchItem[]>([]);
+    const [items, setItems] = useState<YTItem[]>([]);
     const [loading, setLoading] = useState(false);
     const [err, setErr] = useState<string | null>(null);
 
-    const apiUrl = useMemo(() => {
-        if (!keyword || !API_KEY) return null;
-        const q = encodeURIComponent(keyword);
-        return `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${q}&type=video&maxResults=10&key=${API_KEY}`;
-    }, [keyword]);
+    const keyword = params.get("keyword") ?? localStorage.getItem("searchKeyword") ?? "";
+    const API_KEY = import.meta.env.VITE_YT_API_KEY as string | undefined;
 
     useEffect(() => {
-        if (!apiUrl) {
+        if (!keyword) {
             setItems([]);
             return;
         }
-        const ctrl = new AbortController();
+        if (!API_KEY) {
+            setErr("Thiếu API key. Hãy đặt VITE_YT_API_KEY trong .env");
+            setItems([]);
+            return;
+        }
         setLoading(true);
         setErr(null);
 
-        fetch(apiUrl, { signal: ctrl.signal })
-            .then((res) => res.json())
-            .then((data) => setItems((data?.items as YTSearchItem[]) ?? []))
+        const url =
+            "https://www.googleapis.com/youtube/v3/search" +
+            `?part=snippet&type=video&maxResults=12&q=${encodeURIComponent(keyword)}` +
+            `&key=${API_KEY}`;
+
+        fetch(url)
+            .then((r) => r.json())
+            .then((data) => {
+                if (data?.items) setItems(data.items);
+                else {
+                    setItems([]);
+                    setErr("Không lấy được kết quả.");
+                }
+            })
             .catch((e) => {
-                if (e.name !== "AbortError") setErr(String(e));
+                setErr(String(e));
+                setItems([]);
             })
             .finally(() => setLoading(false));
+    }, [keyword, API_KEY]);
 
-        return () => ctrl.abort();
-    }, [apiUrl]);
+    const results = useMemo(
+        () =>
+            (items || [])
+                .map((it) => {
+                    const id = it?.id?.videoId;
+                    const title = it?.snippet?.title ?? "(no title)";
+                    const thumb = it?.snippet?.thumbnails?.medium?.url;
+                    return id ? { id, title, thumb } : null;
+                })
+                .filter(Boolean) as { id: string; title: string; thumb?: string }[],
+        [items]
+    );
 
-    useEffect(() => {
-        if (keyword) localStorage.setItem("searchKeyword", keyword);
-    }, [keyword]);
-
-    const doSearch = () => {
-        const kw = keyword.trim();
-        if (!kw) return;
-        navigate(`/result?keyword=${encodeURIComponent(kw)}`);
-    };
-
-    const handleSelectVideo = (videoId: string) => {
-        const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
-        localStorage.setItem("selectedVideoUrl", videoUrl);
-
-        // lưu đường dẫn để Home hiện mũi tên quay lại đúng keyword
-        const backLink = `/result?keyword=${encodeURIComponent(keyword)}`;
-        localStorage.setItem("backToResult", backLink);
-
-        navigate("/"); // quay lại Home
+    const handlePick = (videoId: string) => {
+        const url = `https://www.youtube.com/watch?v=${videoId}`;
+        // ✅ gửi về Home để phát video mới
+        localStorage.setItem("selectedVideoUrl", url);
+        navigate("/"); // quay về Home
     };
 
     return (
-        <div className="min-h-screen bg-white">
-            {/* Header sticky thân thiện mobile */}
-            <header className="sticky top-0 z-50 bg-white/90 backdrop-blur border-b">
-                <div className="mx-auto max-w-5xl px-3 pt-[env(safe-area-inset-top)]">
-                    <div className="flex items-center justify-between gap-2 py-2">
-                        <button
-                            onClick={() => navigate(-1)}
-                            className="h-10 px-3 rounded border text-sm hover:bg-gray-50 active:scale-[0.99]"
-                            title="Back"
-                        >
-                            ⟵ Back
-                        </button>
-                        <Link
-                            to="/"
-                            className="h-10 px-3 inline-flex items-center justify-center rounded border text-sm hover:bg-gray-50"
-                        >
-                            Home
-                        </Link>
-                    </div>
-
-                    {/* Search dàn hàng dọc trên mobile, full width */}
-                    <div className="pb-2">
-                        <SearchBar
-                            value={keyword}
-                            onChange={setKeyword}
-                            onClear={() => setKeyword("")}
-                            onSearch={doSearch}
-                            placeholder="Search videos…"
-                            className="w-full"
-                        />
-                    </div>
+        <div className="p-4">
+            <div className="flex items-center justify-between mb-3">
+                <h1 className="text-xl font-semibold">Search Results</h1>
+                <div className="flex gap-3">
+                    <button onClick={() => navigate(-1)} className="border px-3 py-1 rounded">
+                        ⟵ Back
+                    </button>
+                    <Link to="/" className="underline px-2 py-1">Home</Link>
                 </div>
-            </header>
+            </div>
 
-            {/* Nội dung */}
-            <main className="mx-auto max-w-5xl px-3 py-3">
-                <h2 className="text-base sm:text-xl font-semibold mb-2">
-                    Kết quả tìm kiếm
-                </h2>
+            <p className="mb-4">
+                Keyword: <b>{keyword || "(empty)"}</b>
+            </p>
 
-                {/* Trạng thái */}
-                {loading && (
-                    <div className="flex items-center gap-2 py-4">
-                        <span className="inline-block w-5 h-5 rounded-full border-2 border-gray-300 border-t-transparent animate-spin" />
-                        <span>Đang tải…</span>
-                    </div>
-                )}
-                {!loading && !API_KEY && (
-                    <p className="text-red-600">
-                        Thiếu <code>VITE_YT_API_KEY</code>. Thêm vào file <code>.env</code>{" "}
-                        để gọi YouTube API.
-                    </p>
-                )}
-                {err && <p className="text-red-600">Lỗi: {err}</p>}
-                {!loading && !err && items.length === 0 && keyword && API_KEY && (
-                    <p>Không có kết quả.</p>
-                )}
+            {loading && <p>Đang tải...</p>}
+            {err && <p className="text-red-600">{err}</p>}
 
-                {/* Danh sách kết quả (responsive grid) */}
-                {!loading && !err && items.length > 0 && (
-                    <ResultList items={items} onSelectVideo={handleSelectVideo} />
-                )}
-            </main>
+            {!loading && !err && results.length === 0 && <p>No result.</p>}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                {results.map((r) => (
+                    <button
+                        key={r.id}
+                        onClick={() => handlePick(r.id)}
+                        className="text-left bg-white rounded shadow hover:shadow-md transition p-2"
+                    >
+                        {r.thumb && (
+                            <img
+                                src={r.thumb}
+                                alt={r.title}
+                                className="w-full rounded mb-2 object-cover"
+                            />
+                        )}
+                        <div className="text-sm line-clamp-2">{r.title}</div>
+                    </button>
+                ))}
+            </div>
         </div>
     );
 }

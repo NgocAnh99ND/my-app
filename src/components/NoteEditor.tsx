@@ -1,6 +1,6 @@
 // src/components/NoteEditor.tsx
 import { useEffect, useRef, useState } from "react";
-import type { FC } from "react";
+import type { FC, FormEvent } from "react";
 import Input from "./Input";
 import IconButton from "./IconButton";
 import SuggestionList from "./SuggestionList";
@@ -15,7 +15,7 @@ type TranscriptEntry = { sec: number; text: string };
 const SEEK_BACK_THRESHOLD = 1.5;
 const MIN_SEARCH_LEN = 6;
 
-const VIEWPORT_PAD = 130; // đẩy dòng trúng lên cách đỉnh 12px
+const VIEWPORT_PAD = 130; // đẩy dòng trúng cách đỉnh ~130px
 
 const NOTE_PLACEHOLDER = `
 Dán theo cấu trúc:
@@ -275,7 +275,7 @@ const NoteEditor: FC<NoteEditorProps> = ({ currentTime = 0 }) => {
         try { ta.focus(); } catch { }
         try { ta.setSelectionRange(hit.start, hit.end); } catch { }
 
-        // ✅ đo offset chính xác và cuộn để dòng lên đỉnh textarea
+        // ✅ đo offset chính xác và cuộn
         const topPx = measureOffsetTopPx(ta, mirror, content, hit.start);
         ta.scrollTo({ top: Math.max(0, topPx - VIEWPORT_PAD), behavior: "smooth" });
     }, [currentTime, entries, nextIdx, content, vocabStart, vocabIndex]);
@@ -343,11 +343,12 @@ const NoteEditor: FC<NoteEditorProps> = ({ currentTime = 0 }) => {
         setNextIdx(0);
     };
 
-    const handleSearchFromArea = () => {
+    // ---- Search: dùng chung cho Enter & nút 🔍 ----
+    const doSearch = () => {
         if (!searchArea.trim() || !textareaRef.current || !mirrorRef.current) return;
+        const ta = textareaRef.current;
         const idx = content.toLowerCase().indexOf(searchArea.toLowerCase());
         if (idx !== -1) {
-            const ta = textareaRef.current;
             try { ta.focus(); } catch { }
             try { ta.setSelectionRange(idx, idx + searchArea.length); } catch { }
             const topPx = measureOffsetTopPx(ta, mirrorRef.current, content, idx);
@@ -357,8 +358,9 @@ const NoteEditor: FC<NoteEditorProps> = ({ currentTime = 0 }) => {
         }
     };
 
-    const handleScrollTop = () => {
-        textareaRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+    const handleSearchSubmit = (e: FormEvent<HTMLFormElement>) => {
+        e.preventDefault();
+        doSearch();
     };
 
     /* ---------------- render ---------------- */
@@ -395,6 +397,7 @@ const NoteEditor: FC<NoteEditorProps> = ({ currentTime = 0 }) => {
                     onChange={(e) => setContent(e.target.value)}
                     placeholder={NOTE_PLACEHOLDER}
                     className="flex-1 w-full p-2 rounded border border-gray-300 resize-none box-border text-base leading-[25px] focus:border-blue-500 focus:outline-none"
+                    spellCheck={false}
                 />
                 {/* mirror ẩn để đo toạ độ — giữ trong DOM để sẵn sàng đo */}
                 <div ref={mirrorRef} aria-hidden="true" />
@@ -408,15 +411,20 @@ const NoteEditor: FC<NoteEditorProps> = ({ currentTime = 0 }) => {
                 )}
             </div>
 
-            {/* Footer */}
+            {/* Footer: Search (Enter + nút) + actions */}
             <div className="flex items-center justify-end gap-2 mt-2">
-                <div className="flex items-center border border-blue-500 rounded-full overflow-hidden bg-white relative h-8 w-[200px] mr-2">
+                <form
+                    onSubmit={handleSearchSubmit}
+                    className="flex items-center border border-blue-500 rounded-full overflow-hidden bg-white relative h-8 w-[220px] mr-2"
+                >
                     <Input
                         type="text"
                         value={searchArea}
                         onChange={(e) => setSearchArea(e.target.value)}
                         placeholder="Search"
                         className="flex-1 border-none outline-none px-2 pr-8 text-base"
+                        enterKeyHint="search"
+                        autoComplete="off"
                     />
                     {searchArea && (
                         <IconButton
@@ -426,13 +434,13 @@ const NoteEditor: FC<NoteEditorProps> = ({ currentTime = 0 }) => {
                         />
                     )}
                     <button
-                        type="button"
-                        onClick={handleSearchFromArea}
-                        className="searchArea bg-gray-100 px-3 cursor-pointer text-lg h-full rounded-r-full"
+                        type="submit"
+                        className="bg-gray-100 px-3 cursor-pointer text-lg h-full rounded-r-full"
+                        aria-label="Thực hiện tìm kiếm"
                     >
                         🔍
                     </button>
-                </div>
+                </form>
 
                 <IconButton
                     icon={<img src="/icons/clipboard-paste.svg" alt="Paste" width={24} height={24} />}
@@ -441,7 +449,7 @@ const NoteEditor: FC<NoteEditorProps> = ({ currentTime = 0 }) => {
                 />
                 <IconButton
                     icon={<img src="/icons/arrow-up.svg" alt="Scroll lên đầu" width={20} height={20} />}
-                    onClick={handleScrollTop}
+                    onClick={() => textareaRef.current?.scrollTo({ top: 0, behavior: "smooth" })}
                     className="bg-gray-100 hover:bg-gray-200 rounded-full h-[30px] w-[30px]"
                 />
 
