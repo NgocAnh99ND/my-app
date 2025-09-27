@@ -1,0 +1,5 @@
+let elementAll = document.getElementsByClassName("segment-text style-scope ytd-transcript-segment-renderer");
+let content = "";
+for (let i = 0; i < elementAll.length; i++) {
+    content = content + elementAll[i].innerText;
+}

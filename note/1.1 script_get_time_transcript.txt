@@ -1,0 +1,76 @@
+(async () => {
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  const pad2 = (n) => String(n).padStart(2, '0');
+
+  // "0:04" hoặc "1:02:03.5" -> "HH:MM:SS"
+  const normalizeTime = (t) => {
+    if (!t) return '00:00:00';
+    const parts = t.trim().split(':').map(x => x.trim());
+    let s = 0;
+    for (const p of parts) s = s * 60 + (parseFloat(p.replace(',', '.')) || 0);
+    s = Math.floor(s);
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    return `${pad2(h)}:${pad2(m)}:${pad2(sec)}`;
+  };
+
+  // ---- chỉ lấy 1 loại node để tránh trùng ----
+  const panel = document.querySelector('ytd-transcript-segment-list-renderer') || document;
+  const getSegs = () => {
+    const prefer = panel.querySelectorAll('ytd-transcript-segment-renderer');
+    if (prefer.length) return Array.from(prefer);
+    // fallback (giao diện cũ): chỉ lấy .segment, KHÔNG gộp chung với prefer
+    return Array.from(panel.querySelectorAll('.segment.ytd-transcript-segment-renderer'));
+  };
+
+  // ---- auto-scroll để load hết transcript (YouTube dùng virtual list) ----
+  const scroller =
+    document.querySelector('ytd-transcript-segment-list-renderer #segments-container') ||
+    document.querySelector('ytd-transcript-segment-list-renderer') ||
+    document;
+  let last = -1, still = 0;
+  for (let i = 0; i < 300; i++) {
+    const n = getSegs().length;
+    if (n === last) still++; else { still = 0; last = n; }
+    if (scroller?.scrollBy) scroller.scrollBy(0, 1400);
+    else if (typeof scroller?.scrollTop === 'number') scroller.scrollTop += 1400;
+    else window.scrollBy(0, 1400);
+    if (still >= 6) break;
+    await sleep(120);
+  }
+
+  // ---- extract + de-dup theo key (ts|text) ----
+  const seen = new Set();
+  const rows = [];
+  for (const el of getSegs()) {
+    const rawTs = (el.querySelector('.segment-timestamp')?.textContent ||
+                   el.querySelector('.segment-start-offset')?.textContent || '')
+                  .trim().replace(/\s+/g, ' ');
+    const text = (el.querySelector('.segment-text')?.textContent ||
+                  el.querySelector('yt-formatted-string.segment-text')?.textContent || '')
+                  .replace(/\s+/g, ' ')
+                  .trim();
+    const ts = normalizeTime(rawTs);
+    const key = `${ts}|${text}`;
+    if (text && !seen.has(key)) {
+      seen.add(key);
+      rows.push({ ts, text });
+    }
+  }
+
+  if (!rows.length) {
+    console.warn('Không thấy phụ đề. Hãy bấm "Show transcript" rồi chạy lại.');
+    return;
+  }
+
+  // ---- build TXT & download ----
+  const content = rows.map(r => `${r.ts} - ${r.text}`).join('\n');
+  const base = (document.title || 'youtube_transcript').replace(/[\\/:*?"<>|]+/g, '_');
+  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = Object.assign(document.createElement('a'), { href: url, download: `${base}.txt` });
+  document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+
+  console.log(`✅ Đã xuất ${rows.length} dòng (không trùng) vào TXT.`);
+})();

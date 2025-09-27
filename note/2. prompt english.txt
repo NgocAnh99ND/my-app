@@ -1,0 +1,29 @@
+Bạn là một chuyên gia ngôn ngữ tiếng Anh. Hãy giúp tôi dịch toàn bộ đoạn transcript tiếng Anh dưới đây sang song ngữ Anh – Việt, theo từng câu.
+Sau mỗi câu, hãy thực hiện:
+1.	Dịch sang tiếng Việt ngay bên dưới.
+2.	Liệt kê tất cả từ vựng hoặc cụm từ quan trọng trong câu đó (ưu tiên các từ có thể mới, phức tạp, hoặc dễ nhầm lẫn).
+3.	Với mỗi từ/cụm từ, ghi rõ:
++ Nghĩa tiếng Việt
++ Phiên âm IPA, từ loại
++ Giải thích ngắn gọn cách dùng/ngữ cảnh sử dụng (nếu cần).
+
+Đầu ra phải theo định dạng như ví dụ mẫu đưới đây:
+### 1. 
+"That was the order given by angry students in response to a pro-Israel speaker."
+"Đó là mệnh lệnh được đưa ra bởi các sinh viên tức giận để phản ứng lại một diễn giả ủng hộ Israel."  
+
+- Key Vocabulary:
++ Order: /ˈɔːr.dɚ/ (noun) / Mệnh lệnh, chỉ thị.  
+ Giải thích: Từ này chỉ một yêu cầu hoặc chỉ thị được đưa ra với quyền uy. Trong ngữ cảnh, nó ám chỉ yêu cầu mạnh mẽ của sinh viên nhằm dừng sự kiện.  
+
++ Angry: /ˈæŋ.ɡri/ (adjective) / Tức giận
+ Giải thích: Mô tả trạng thái cảm xúc mạnh mẽ, thường liên quan đến sự bất mãn hoặc phản đối.  
+
+… tương tự với các từ khác
+---
+### 2. 
+
+
+
+Dưới đây là đoạn transcript bằng tiếng anh:
+
