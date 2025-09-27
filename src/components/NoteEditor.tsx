@@ -31,13 +31,27 @@ Deep breath: hít một hơi thật sâu
 
 const headerRegex = /^\s*key\s*(?:-|:)?\s*vocab/i;
 
-const timeToSec = (s: string) => {
-    const p = s.trim().split(":").map(Number);
-    if (p.some((n) => Number.isNaN(n))) return NaN;
-    if (p.length === 2) return p[0] * 60 + p[1];
-    if (p.length === 3) return p[0] * 3600 + p[1] * 60 + p[2];
-    return NaN;
-};
+/** --- Mobile helpers --- */
+const isIOS = /iP(ad|hone|od)/i.test(navigator.userAgent);
+
+/** Cuộn trong <textarea> – tránh dùng "in" type guard gây narrow thành never */
+function scrollTextareaTo(
+    ta: HTMLTextAreaElement,
+    top: number,
+    smooth: boolean = true
+) {
+    const wantSmooth = smooth && !isIOS;
+    try {
+        const anyTa = ta as any;
+        if (typeof anyTa.scrollTo === "function") {
+            anyTa.scrollTo({ top, behavior: wantSmooth ? "smooth" : "auto" });
+        } else {
+            anyTa.scrollTop = top; // dùng any để tránh TS narrow
+        }
+    } catch {
+        (ta as any).scrollTop = top;
+    }
+}
 
 /* ---------- dựng chỉ số dòng & offset chuẩn ---------- */
 function computeLines(content: string) {
@@ -85,6 +99,14 @@ function parseTranscriptFromTop(lines: string[], headerIdx: number): TranscriptE
     return entries;
 }
 
+function timeToSec(s: string) {
+    const p = s.trim().split(":").map(Number);
+    if (p.some((n) => Number.isNaN(n))) return NaN;
+    if (p.length === 2) return p[0] * 60 + p[1];
+    if (p.length === 3) return p[0] * 3600 + p[1] * 60 + p[2];
+    return NaN;
+}
+
 function normalize(s: string) {
     return s
         .toLowerCase()
@@ -130,8 +152,7 @@ function findInVocabulary(
 }
 
 function firstIdxAfter(entries: TranscriptEntry[], t: number) {
-    let lo = 0,
-        hi = entries.length;
+    let lo = 0, hi = entries.length;
     while (lo < hi) {
         const mid = (lo + hi) >> 1;
         if (entries[mid].sec > t) hi = mid;
@@ -165,15 +186,19 @@ function copyTextareaStylesToMirror(ta: HTMLTextAreaElement, mirror: HTMLDivElem
         "wordBreak",
         "overflowWrap",
     ] as const;
+
     mirror.style.whiteSpace = "pre-wrap";
     mirror.style.wordBreak = "break-word";
     mirror.style.overflowWrap = "anywhere";
-    mirror.style.position = "fixed";
-    mirror.style.visibility = "hidden";
-    mirror.style.zIndex = "-1";
+
+    // ⬇️ Absolute + visibility hidden giúp iOS ổn định hơn
+    mirror.style.position = "absolute";
     mirror.style.left = "-9999px";
-    mirror.style.top = "-9999px";
+    mirror.style.top = "0";
+    mirror.style.visibility = "hidden";
     mirror.style.width = ta.clientWidth + "px";
+    mirror.style.pointerEvents = "none";
+
     props.forEach((p) => {
         // @ts-ignore
         mirror.style[p] = cs[p] as any;
@@ -188,12 +213,11 @@ function measureOffsetTopPx(
     idx: number
 ) {
     copyTextareaStylesToMirror(ta, mirror);
-    // set nội dung trước vị trí + marker zero-width
     mirror.textContent = content.slice(0, idx);
     const marker = document.createElement("span");
     marker.textContent = "\u200b"; // zero-width
     mirror.appendChild(marker);
-    const top = marker.offsetTop; // pixel từ top mirror
+    const top = marker.offsetTop;
     mirror.textContent = ""; // clean
     return top;
 }
@@ -217,14 +241,15 @@ const NoteEditor: FC<NoteEditorProps> = ({ currentTime = 0 }) => {
     const [nextIdx, setNextIdx] = useState(0);
     const prevTimeRef = useRef(0);
 
-    const textareaRef = useRef<HTMLTextAreaElement>(null);
-    const titleWrapperRef = useRef<HTMLDivElement>(null);
-    const mirrorRef = useRef<HTMLDivElement>(null); // mirror ẩn để đo offset
+    const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+    const titleWrapperRef = useRef<HTMLDivElement | null>(null);
+    const mirrorRef = useRef<HTMLDivElement | null>(null); // mirror ẩn để đo offset
 
     /* Ẩn gợi ý tiêu đề khi click ngoài */
     useEffect(() => {
         const handleClickOutside = (e: MouseEvent) => {
-            if (titleWrapperRef.current && !titleWrapperRef.current.contains(e.target as Node)) {
+            const wrap = titleWrapperRef.current;
+            if (wrap && !wrap.contains(e.target as Node)) {
                 setShowSuggestions(false);
             }
         };
@@ -242,7 +267,7 @@ const NoteEditor: FC<NoteEditorProps> = ({ currentTime = 0 }) => {
         setNextIdx(firstIdxAfter(es, prevTimeRef.current));
     }, [content]);
 
-    /* Đồng bộ theo thời gian: chỉ cuộn khi vượt mốc kế tiếp */
+    /* Đồng bộ theo thời gian: chỉ cuộn khi vượt mốc kế tiếp (mobile-safe) */
     useEffect(() => {
         const prev = prevTimeRef.current;
         prevTimeRef.current = currentTime;
@@ -271,13 +296,14 @@ const NoteEditor: FC<NoteEditorProps> = ({ currentTime = 0 }) => {
         const hit = findInVocabulary(content, vocabStart, text, vocabIndex);
         if (!hit) return;
 
-        // highlight
-        try { ta.focus(); } catch { }
+        // focus + setSelectionRange trước, rồi delay 1 frame
+        try { ta.focus({ preventScroll: true } as any); } catch { }
         try { ta.setSelectionRange(hit.start, hit.end); } catch { }
 
-        // ✅ đo offset chính xác và cuộn
-        const topPx = measureOffsetTopPx(ta, mirror, content, hit.start);
-        ta.scrollTo({ top: Math.max(0, topPx - VIEWPORT_PAD), behavior: "smooth" });
+        requestAnimationFrame(() => {
+            const topPx = measureOffsetTopPx(ta, mirror, content, hit.start);
+            scrollTextareaTo(ta, Math.max(0, topPx - VIEWPORT_PAD), true);
+        });
     }, [currentTime, entries, nextIdx, content, vocabStart, vocabIndex]);
 
     /* --------- CRUD ghi chú (giữ nguyên) --------- */
@@ -345,14 +371,19 @@ const NoteEditor: FC<NoteEditorProps> = ({ currentTime = 0 }) => {
 
     // ---- Search: dùng chung cho Enter & nút 🔍 ----
     const doSearch = () => {
-        if (!searchArea.trim() || !textareaRef.current || !mirrorRef.current) return;
         const ta = textareaRef.current;
+        const mirror = mirrorRef.current;
+        if (!searchArea.trim() || !ta || !mirror) return;
+
         const idx = content.toLowerCase().indexOf(searchArea.toLowerCase());
         if (idx !== -1) {
-            try { ta.focus(); } catch { }
+            try { ta.focus({ preventScroll: true } as any); } catch { }
             try { ta.setSelectionRange(idx, idx + searchArea.length); } catch { }
-            const topPx = measureOffsetTopPx(ta, mirrorRef.current, content, idx);
-            ta.scrollTo({ top: Math.max(0, topPx - VIEWPORT_PAD), behavior: "smooth" });
+
+            requestAnimationFrame(() => {
+                const topPx = measureOffsetTopPx(ta, mirror, content, idx);
+                scrollTextareaTo(ta, Math.max(0, topPx - VIEWPORT_PAD), true);
+            });
         } else {
             alert("Không tìm thấy từ cần tìm.");
         }
@@ -396,7 +427,7 @@ const NoteEditor: FC<NoteEditorProps> = ({ currentTime = 0 }) => {
                     value={content}
                     onChange={(e) => setContent(e.target.value)}
                     placeholder={NOTE_PLACEHOLDER}
-                    className="flex-1 w-full p-2 rounded border border-gray-300 resize-none box-border text-base leading-[25px] focus:border-blue-500 focus:outline-none"
+                    className="flex-1 w-full p-2 rounded border border-gray-300 resize-none box-border text-base leading-[25px] focus:border-blue-500 focus:outline-none min-h-[220px] md:min-h-[280px]"
                     spellCheck={false}
                 />
                 {/* mirror ẩn để đo toạ độ — giữ trong DOM để sẵn sàng đo */}
@@ -449,7 +480,10 @@ const NoteEditor: FC<NoteEditorProps> = ({ currentTime = 0 }) => {
                 />
                 <IconButton
                     icon={<img src="/icons/arrow-up.svg" alt="Scroll lên đầu" width={20} height={20} />}
-                    onClick={() => textareaRef.current?.scrollTo({ top: 0, behavior: "smooth" })}
+                    onClick={() => {
+                        const ta = textareaRef.current;
+                        if (ta) scrollTextareaTo(ta, 0, true);
+                    }}
                     className="bg-gray-100 hover:bg-gray-200 rounded-full h-[30px] w-[30px]"
                 />
 

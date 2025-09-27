@@ -1,1 +1,2 @@
 @import "tailwindcss";
+textarea { -webkit-overflow-scrolling: touch; }
