@@ -15,6 +15,31 @@
     return `${pad2(h)}:${pad2(m)}:${pad2(sec)}`;
   };
 
+  // Lấy videoId/link chuẩn
+  const extractVideoIdFromUrl = (url) => {
+    try {
+      const u = new URL(url);
+      if (u.searchParams.get('v')) return u.searchParams.get('v');
+      // /shorts/ID
+      const mShorts = u.pathname.match(/\/shorts\/([^/]+)/);
+      if (mShorts) return mShorts[1];
+      // /embed/ID
+      const mEmbed = u.pathname.match(/\/embed\/([^/]+)/);
+      if (mEmbed) return mEmbed[1];
+      // youtu.be/ID
+      const mBe = u.pathname.match(/^\/([^/]{6,})/);
+      if (u.hostname.includes('youtu.be') && mBe) return mBe[1];
+    } catch {}
+    return null;
+  };
+
+  const domVid = document.querySelector('ytd-watch-flexy')?.getAttribute('video-id') ||
+                 document.querySelector('ytd-player')?.getAttribute('video-id') ||
+                 null;
+  const urlVid = extractVideoIdFromUrl(location.href);
+  const videoId = domVid || urlVid || '';
+  const videoLink = videoId ? `https://www.youtube.com/watch?v=${videoId}` : location.href.split('&')[0];
+
   // ---- chỉ lấy 1 loại node để tránh trùng ----
   const panel = document.querySelector('ytd-transcript-segment-list-renderer') || document;
   const getSegs = () => {
@@ -64,13 +89,23 @@
     return;
   }
 
-  // ---- build TXT & download ----
-  const content = rows.map(r => `${r.ts} - ${r.text}`).join('\n');
+  // ---- build nội dung theo yêu cầu ----
+  const transcript = rows.map(r => `${r.ts} - ${r.text}`).join('\n');
+  const threeBlanks = '\n\n\n';
+  // Dòng đầu: Link: <url>
+  const finalText =
+    `Link: ${videoLink}\n\n` +
+    transcript +
+    threeBlanks +
+    `Key Vocabulary` +
+    threeBlanks;
+
+  // ---- download TXT ----
   const base = (document.title || 'youtube_transcript').replace(/[\\/:*?"<>|]+/g, '_');
-  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+  const blob = new Blob([finalText], { type: 'text/plain;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = Object.assign(document.createElement('a'), { href: url, download: `${base}.txt` });
   document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
 
-  console.log(`✅ Đã xuất ${rows.length} dòng (không trùng) vào TXT.`);
+  console.log(`✅ Đã xuất ${rows.length} dòng (không trùng) vào TXT, kèm header Link và khối Key Vocabulary.`);
 })();
