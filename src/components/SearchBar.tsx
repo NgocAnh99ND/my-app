@@ -90,7 +90,7 @@ const SearchBar: FC<SearchBarProps> = ({
                 className="flex items-center border border-blue-500 rounded-full overflow-hidden bg-white h-10 w-full"
             >
                 <Input
-                    type="search"
+                    type="text"
                     value={value}
                     onChange={(e) => handleChange(e.target.value)}
                     placeholder={placeholder}

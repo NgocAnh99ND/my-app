@@ -1,13 +1,36 @@
+// Chạy trong tab YouTube sau khi mở "Show transcript"
 (async () => {
-  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-  const pad2 = (n) => String(n).padStart(2, '0');
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const pad2 = (n) => String(n).padStart(2, "0");
 
-  // "0:04" hoặc "1:02:03.5" -> "HH:MM:SS"
+  // ===== URL helpers =====
+  const getRawUrl = () =>
+    document.querySelector('meta[property="og:url"]')?.content ||
+    document.querySelector('link[rel="canonical"]')?.href ||
+    window.location.href;
+
+  const extractVideoId = (url) => {
+    const m =
+      url.match(/(?:[?&]v=|\/(?:embed|shorts|v)\/|youtu\.be\/)([A-Za-z0-9_-]{6,})/) || [];
+    return m[1] || "";
+  };
+
+  const toWatchUrl = () => {
+    const raw = getRawUrl() || "";
+    const id = extractVideoId(raw);
+    return id ? `https://www.youtube.com/watch?v=${id}` : raw;
+  };
+
+  // "0:04", "1:02:03.5", "01:02", "1:2:3", "0:04,5" -> "HH:MM:SS"
   const normalizeTime = (t) => {
-    if (!t) return '00:00:00';
-    const parts = t.trim().split(':').map(x => x.trim());
+    if (!t) return "00:00:00";
+    const clean = t.replace(/\u200B|\u2060|\u00A0/g, "").trim();
+    const parts = clean.split(":").map((x) => x.trim());
     let s = 0;
-    for (const p of parts) s = s * 60 + (parseFloat(p.replace(',', '.')) || 0);
+    for (const p of parts) {
+      const v = parseFloat(p.replace(",", "."));
+      s = s * 60 + (isFinite(v) ? v : 0);
+    }
     s = Math.floor(s);
     const h = Math.floor(s / 3600);
     const m = Math.floor((s % 3600) / 60);
@@ -15,97 +38,98 @@
     return `${pad2(h)}:${pad2(m)}:${pad2(sec)}`;
   };
 
-  // Lấy videoId/link chuẩn
-  const extractVideoIdFromUrl = (url) => {
-    try {
-      const u = new URL(url);
-      if (u.searchParams.get('v')) return u.searchParams.get('v');
-      // /shorts/ID
-      const mShorts = u.pathname.match(/\/shorts\/([^/]+)/);
-      if (mShorts) return mShorts[1];
-      // /embed/ID
-      const mEmbed = u.pathname.match(/\/embed\/([^/]+)/);
-      if (mEmbed) return mEmbed[1];
-      // youtu.be/ID
-      const mBe = u.pathname.match(/^\/([^/]{6,})/);
-      if (u.hostname.includes('youtu.be') && mBe) return mBe[1];
-    } catch {}
-    return null;
-  };
+  // ========= DOM helpers =========
+  const $ = (sel, root = document) => root.querySelector(sel);
+  const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
-  const domVid = document.querySelector('ytd-watch-flexy')?.getAttribute('video-id') ||
-                 document.querySelector('ytd-player')?.getAttribute('video-id') ||
-                 null;
-  const urlVid = extractVideoIdFromUrl(location.href);
-  const videoId = domVid || urlVid || '';
-  const videoLink = videoId ? `https://www.youtube.com/watch?v=${videoId}` : location.href.split('&')[0];
-
-  // ---- chỉ lấy 1 loại node để tránh trùng ----
-  const panel = document.querySelector('ytd-transcript-segment-list-renderer') || document;
-  const getSegs = () => {
-    const prefer = panel.querySelectorAll('ytd-transcript-segment-renderer');
-    if (prefer.length) return Array.from(prefer);
-    // fallback (giao diện cũ): chỉ lấy .segment, KHÔNG gộp chung với prefer
-    return Array.from(panel.querySelectorAll('.segment.ytd-transcript-segment-renderer'));
-  };
-
-  // ---- auto-scroll để load hết transcript (YouTube dùng virtual list) ----
-  const scroller =
-    document.querySelector('ytd-transcript-segment-list-renderer #segments-container') ||
-    document.querySelector('ytd-transcript-segment-list-renderer') ||
+  const panel =
+    $("ytd-transcript-segment-list-renderer") ||
+    $('ytd-engagement-panel-section-list-renderer[engagement-panel-identifier="engagement-panel-searchable-transcript"]') ||
     document;
+
+  const getSegs = () => {
+    const prefer = $$("ytd-transcript-segment-renderer", panel);
+    if (prefer.length) return prefer;
+    const legacy = $$(".segment.ytd-transcript-segment-renderer", panel);
+    if (legacy.length) return legacy;
+    const guess = $$(
+      ".segment-text, yt-formatted-string.segment-text, .segment-start-offset, .segment-timestamp",
+      panel
+    )
+      .map((el) => el.closest("ytd-transcript-segment-renderer"))
+      .filter(Boolean);
+    return Array.from(new Set(guess));
+  };
+
+  const scroller =
+    $("#segments-container", panel) || $("ytd-transcript-segment-list-renderer", panel) || panel;
+
+  // ========= Auto-scroll để load hết =========
   let last = -1, still = 0;
-  for (let i = 0; i < 300; i++) {
+  for (let i = 0; i < 400; i++) {
     const n = getSegs().length;
     if (n === last) still++; else { still = 0; last = n; }
-    if (scroller?.scrollBy) scroller.scrollBy(0, 1400);
-    else if (typeof scroller?.scrollTop === 'number') scroller.scrollTop += 1400;
+
+    if (scroller && typeof scroller.scrollBy === "function") scroller.scrollBy(0, 1400);
+    else if (scroller && typeof scroller.scrollTop === "number") scroller.scrollTop += 1400;
     else window.scrollBy(0, 1400);
-    if (still >= 6) break;
-    await sleep(120);
+
+    if (still >= 8) break;
+    await sleep(100);
   }
 
-  // ---- extract + de-dup theo key (ts|text) ----
-  const seen = new Set();
+  // ========= Trích xuất & khử trùng =========
   const rows = [];
+  const seen = new Set();
+  const getText = (el, sel) => (el.querySelector(sel)?.textContent || "").replace(/\s+/g, " ").trim();
+
   for (const el of getSegs()) {
-    const rawTs = (el.querySelector('.segment-timestamp')?.textContent ||
-                   el.querySelector('.segment-start-offset')?.textContent || '')
-                  .trim().replace(/\s+/g, ' ');
-    const text = (el.querySelector('.segment-text')?.textContent ||
-                  el.querySelector('yt-formatted-string.segment-text')?.textContent || '')
-                  .replace(/\s+/g, ' ')
-                  .trim();
+    const rawTs =
+      getText(el, ".segment-timestamp") ||
+      getText(el, ".segment-start-offset") ||
+      getText(el, "yt-formatted-string.segment-start-offset") ||
+      "";
+
+    const text =
+      getText(el, ".segment-text") ||
+      getText(el, "yt-formatted-string.segment-text") ||
+      getText(el, "#text") ||
+      "";
+
     const ts = normalizeTime(rawTs);
-    const key = `${ts}|${text}`;
-    if (text && !seen.has(key)) {
+    const cleanText = text
+      .replace(/\u200B|\u2060|\u00A0/g, "")
+      .replace(/^\[(music|applause|laughter|tiếng vỗ tay|nhạc)\]$/i, "")
+      .trim();
+
+    const key = `${ts}|${cleanText.toLowerCase()}`;
+    if (cleanText && !seen.has(key)) {
       seen.add(key);
-      rows.push({ ts, text });
+      rows.push({ ts, text: cleanText });
     }
   }
 
   if (!rows.length) {
     console.warn('Không thấy phụ đề. Hãy bấm "Show transcript" rồi chạy lại.');
+    alert('Không thấy phụ đề. Hãy bấm "Show transcript" trong YouTube rồi chạy lại đoạn script.');
     return;
   }
 
-  // ---- build nội dung theo yêu cầu ----
-  const transcript = rows.map(r => `${r.ts} - ${r.text}`).join('\n');
-  const threeBlanks = '\n\n\n';
-  // Dòng đầu: Link: <url>
-  const finalText =
-    `Link: ${videoLink}\n\n` +
-    transcript +
-    threeBlanks +
-    `Key Vocabulary` +
-    threeBlanks;
+  // ========= Build nội dung xuất =========
+  const watchUrl = toWatchUrl();
+  const title = (document.title || "").trim();
+  const header = [watchUrl, title && `Title: ${title}`].filter(Boolean).join("\n");
 
-  // ---- download TXT ----
-  const base = (document.title || 'youtube_transcript').replace(/[\\/:*?"<>|]+/g, '_');
-  const blob = new Blob([finalText], { type: 'text/plain;charset=utf-8' });
+  const transcriptBlock = rows.map((r) => `${r.ts} - ${r.text}`).join("\n");
+  const sentinel = "\n\n:::VOCAB:::\n";
+  const content = `${header}\n\n${transcriptBlock}${sentinel}`;
+
+  // ========= Tải xuống =========
+  const base = (document.title || "youtube_transcript").replace(/[\\/:*?"<>|]+/g, "_");
+  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
   const url = URL.createObjectURL(blob);
-  const a = Object.assign(document.createElement('a'), { href: url, download: `${base}.txt` });
+  const a = Object.assign(document.createElement("a"), { href: url, download: `${base}.txt` });
   document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
 
-  console.log(`✅ Đã xuất ${rows.length} dòng (không trùng) vào TXT, kèm header Link và khối Key Vocabulary.`);
+  console.log(`✅ Đã xuất ${rows.length} dòng (không trùng) vào TXT. Đã thêm link video ở đầu + :::VOCAB:::.`);
 })();
