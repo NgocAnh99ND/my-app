@@ -86,7 +86,6 @@ const NoteEditor: FC<NoteEditorProps> = ({ currentTime = 0 }) => {
         setContent,
         displayHtml,
         viewerEmptyText,
-        doSearch,          // chỉ dùng ở READ (nếu cần)
         clearEngine,
         showDebug,
         setShowDebug,
