@@ -265,7 +265,7 @@ const NoteEditor: FC<NoteEditorProps> = ({ currentTime = 0 }) => {
     );
 
     return (
-        <div className="h-full flex flex-col bg-white rounded-xl shadow-lg p-3 overflow-hidden">
+        <div className="h-full flex flex-col bg-white rounded-xl shadow-lg p-2 overflow-hidden">
             {/* Title + gợi ý bản lưu */}
             <div className="relative mb-2 shrink-0" ref={titleWrapperRef}>
                 <Input

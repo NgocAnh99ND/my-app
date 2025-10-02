@@ -20,7 +20,7 @@ type PlayerControlsProps = {
 };
 
 const buttonClass =
-    "flex items-center justify-center rounded-lg transition-colors h-10 w-10 p-0 bg-gray-100 hover:bg-blue-100";
+    "flex items-center justify-center rounded-lg transition-colors h-10 w-10 p-0 bg-gray-100 hover:bg-blue-100 active:bg-blue-600";
 const inputClass =
     "h-10 rounded-lg text-center border border-blue-500 text-base outline-none w-12";
 
@@ -53,7 +53,7 @@ const PlayerControls: FC<PlayerControlsProps> = ({
             }
             onClick={onActivateSubtitleAndSpeed}
             ariaLabel="Bật phụ đề tiếng Anh và tốc độ 0.8"
-            className="flex items-center justify-center rounded-lg transition-colors h-8 w-8 p-0 bg-blue-100 hover:bg-blue-200 mr-2"
+            className="flex items-center justify-center rounded-lg transition-colors h-8 w-8 p-0 bg-blue-100 hover:bg-blue-400 active:bg-blue-400 mr-2"
         />
 
         <IconButton

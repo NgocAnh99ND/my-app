@@ -200,14 +200,14 @@ const Home: React.FC = () => {
       </div>
 
       {/* Vùng NOTEEDITOR: chiếm phần còn lại, chỉ phần con cuộn */}
-      <div className="flex-1 min-h-0 overflow-hidden px-3">
+      <div className="flex-1 min-h-0 overflow-hidden">
         <div className="mx-auto h-full max-w-[740px]">
           <NoteEditor currentTime={currentTime} />
         </div>
       </div>
 
       {/* Thanh điều khiển dưới: cố định chiều cao, không tràn */}
-      <div className="shrink-0 mb-15">
+      <div className="shrink-0 mb-16">
         <div className="flex w-full justify-center py-2">
           <PlayerControls
             seekSeconds={seekSeconds}
