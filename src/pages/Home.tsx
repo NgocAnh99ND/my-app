@@ -16,7 +16,8 @@ const extractVideoId = (link: string) => {
   return match ? match[1] : "";
 };
 
-const LAST_TIME_KEY = "lastVideoTime";
+// mỗi video 1 key thời gian
+const LAST_TIME_PREFIX = "lastVideoTime_";
 const LAST_VIDEO_KEY = "lastVideoId";
 
 const Home: React.FC = () => {
@@ -56,7 +57,7 @@ const Home: React.FC = () => {
     isPlaying,
   } = useYouTubePlayer();
 
-  // Ưu tiên phát video chọn từ trang Result (qua localStorage)
+  // Khi load trang → đọc videoId + thời gian lưu gần nhất
   useEffect(() => {
     const selected = localStorage.getItem("selectedVideoUrl");
     if (selected) {
@@ -64,7 +65,6 @@ const Home: React.FC = () => {
       if (id) {
         setVideoUrl(selected);
         localStorage.setItem(LAST_VIDEO_KEY, id);
-        localStorage.setItem(LAST_TIME_KEY, "0");
         setInitialTime(0);
         setCurrentTime(0);
       }
@@ -73,17 +73,27 @@ const Home: React.FC = () => {
     }
 
     const lastId = localStorage.getItem(LAST_VIDEO_KEY);
-    const lastTimeStr = localStorage.getItem(LAST_TIME_KEY);
-
-    if (lastId) setVideoUrl(`https://www.youtube.com/watch?v=${lastId}`);
-
-    const lastTime = lastTimeStr ? parseFloat(lastTimeStr) : 0;
-    const t = isFinite(lastTime) ? lastTime : 0;
-    setInitialTime(t);
-    setCurrentTime(t);
+    if (lastId) {
+      setVideoUrl(`https://www.youtube.com/watch?v=${lastId}`);
+      const lastTimeStr = localStorage.getItem(LAST_TIME_PREFIX + lastId);
+      const lastTime = lastTimeStr ? parseFloat(lastTimeStr) : 0;
+      const t = isFinite(lastTime) ? lastTime : 0;
+      setInitialTime(t);
+      setCurrentTime(t);
+    }
   }, []);
 
-  // Lắng nghe thay đổi searchKeyword từ tab khác (khi tìm ở trang Result)
+  // Cập nhật khi đổi videoUrl (ví dụ chọn video mới)
+  useEffect(() => {
+    if (!videoId) return;
+    const saved = localStorage.getItem(LAST_TIME_PREFIX + videoId);
+    const t = saved ? parseFloat(saved) : 0;
+    setInitialTime(isFinite(t) ? t : 0);
+    setCurrentTime(isFinite(t) ? t : 0);
+    localStorage.setItem(LAST_VIDEO_KEY, videoId);
+  }, [videoId]);
+
+  // Lắng nghe thay đổi searchKeyword từ tab khác
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
       if (e.key === "searchKeyword") setLastSearch(e.newValue || "");
@@ -92,12 +102,16 @@ const Home: React.FC = () => {
     return () => window.removeEventListener("storage", onStorage);
   }, []);
 
-  // Cập nhật currentTime liên tục để NoteEditor theo kịp video
+  // Cập nhật currentTime + lưu vào localStorage theo videoId
   const handleTimeUpdate = (t: number) => {
     setCurrentTime(t);
-    localStorage.setItem(LAST_TIME_KEY, String(t));
+    if (videoId) {
+      localStorage.setItem(LAST_TIME_PREFIX + videoId, String(t));
+      localStorage.setItem(LAST_VIDEO_KEY, videoId);
+    }
   };
 
+  // Seek
   const onIncreaseSeek = () =>
     setSeekSeconds((s) => parseFloat((s + customStep).toFixed(1)));
   const onDecreaseSeek = () =>
@@ -105,7 +119,7 @@ const Home: React.FC = () => {
   const onEnterFullscreen = () => setIsFullscreen(true);
   const onExitFullscreen = () => setIsFullscreen(false);
 
-  // SearchBar -> Result
+  // SearchBar
   const handleClearSearch = () => setSearchText("");
   const handleSearch = () => {
     if (!searchText.trim()) return;
@@ -130,12 +144,10 @@ const Home: React.FC = () => {
     if (!id) return;
     setVideoUrl(youtubeLink);
     localStorage.setItem(LAST_VIDEO_KEY, id);
-    localStorage.setItem(LAST_TIME_KEY, "0");
     setInitialTime(0);
     setCurrentTime(0);
   };
 
-  // Mở lại Result với từ khóa gần nhất
   const goToLastResult = () => {
     const kw = (localStorage.getItem("searchKeyword") || lastSearch).trim();
     if (kw) navigate(`/result?keyword=${encodeURIComponent(kw)}`);
@@ -146,12 +158,16 @@ const Home: React.FC = () => {
 
   return (
     <div className="flex h-screen w-full flex-col overflow-hidden bg-gray-100">
-      {/* Vùng VIDEO: khống chế chiều cao để dành chỗ cho NoteEditor + Controls */}
+      {/* Vùng VIDEO */}
       <div className="shrink-0">
         <div className="w-full max-h-[42vh] overflow-hidden relative">
           <VideoPlayer
             videoId={videoId}
-            className={isFullscreen ? "fixed top-0 left-0 w-screen h-[95vh] z-[1000]" : "w-full"}
+            className={
+              isFullscreen
+                ? "fixed top-0 left-0 w-screen h-[95vh] z-[1000]"
+                : "w-full"
+            }
             initialTime={initialTime}
             onTimeUpdate={handleTimeUpdate}
             defaultPlaybackRate={activateSubtitleAndSpeed ? 0.8 : undefined}
@@ -162,13 +178,16 @@ const Home: React.FC = () => {
             onToggleSearch={() => setShowSearchBox((s) => !s)}
           />
 
-          {/* Nút mở lại trang Result (góc trên phải) */}
+          {/* Nút mở lại trang Result */}
           {showGoResult && (
             <button
               onClick={goToLastResult}
               aria-label={lastSearch ? `Mở kết quả cho "${lastSearch}"` : "Mở trang kết quả"}
               className={`fixed top-10 right-0 z-[1600] w-11 h-11 rounded-full shadow
-                ${lastSearch ? "bg-gray-500 hover:bg-red-500" : "bg-gray-300 hover:bg-gray-300 cursor-pointer"}
+                ${lastSearch
+                  ? "bg-gray-500 hover:bg-red-500"
+                  : "bg-gray-300 hover:bg-gray-300 cursor-pointer"
+                }
                 text-white flex items-center justify-center active:translate-y-px`}
               title={lastSearch ? `Go to results: ${lastSearch}` : "Go to results"}
             >
@@ -176,7 +195,7 @@ const Home: React.FC = () => {
             </button>
           )}
 
-          {/* Ô Search nổi + nhập link YouTube (toggle bởi nút 🔍 trong VideoPlayer) */}
+          {/* Ô Search nổi */}
           {showSearchBox && (
             <div className="absolute top-0 left-1/2 -translate-x-1/2 rounded-lg shadow-lg px-3 flex flex-col items-center w-[90%] max-w-[600px] z-[2000]">
               <SearchBar
@@ -199,15 +218,15 @@ const Home: React.FC = () => {
         </div>
       </div>
 
-      {/* Vùng NOTEEDITOR: chiếm phần còn lại, chỉ phần con cuộn */}
+      {/* NOTEEDITOR */}
       <div className="flex-1 min-h-0 overflow-hidden">
         <div className="mx-auto h-full max-w-[740px]">
           <NoteEditor currentTime={currentTime} />
         </div>
       </div>
 
-      {/* Thanh điều khiển dưới: cố định chiều cao, không tràn */}
-      <div className="shrink-0 mb-16">
+      {/* CONTROLS */}
+      <div className="shrink-0 mb-18">
         <div className="flex w-full justify-center py-2">
           <PlayerControls
             seekSeconds={seekSeconds}
