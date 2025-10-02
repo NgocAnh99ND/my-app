@@ -1,5 +1,14 @@
 // src/components/NoteEditor/NoteEditor.tsx
-import { useEffect, useMemo, useRef, useState, type FC, type FormEvent } from "react";
+import {
+    useEffect,
+    useLayoutEffect,
+    useMemo,
+    useRef,
+    useState,
+    type FC,
+    type FormEvent,
+    type ReactNode,
+} from "react";
 import Input from "../Input";
 import IconButton from "../IconButton";
 import SuggestionList from "../SuggestionList";
@@ -12,61 +21,8 @@ const isMobileUA =
     typeof navigator !== "undefined" &&
     /Android|iP(hone|ad|od)|Mobi/i.test(navigator.userAgent);
 
-/** Khoảng cách cách mép trên một chút khi cuộn caret lên đầu */
+/** Khoảng cách cách mép trên một chút khi cuộn hit lên đầu */
 const EDIT_TOP_OFFSET = 28;
-
-/** Mirror textarea để tính toạ độ caret tương đối theo pixel (top) */
-const getCaretTopPx = (ta: HTMLTextAreaElement, caretIndex: number) => {
-    const computed = window.getComputedStyle(ta);
-    const div = document.createElement("div");
-    const span = document.createElement("span");
-
-    // copy các style ảnh hưởng đến wrap/line-height/box
-    const props = [
-        "boxSizing",
-        "width",
-        "paddingTop", "paddingRight", "paddingBottom", "paddingLeft",
-        "borderTopWidth", "borderRightWidth", "borderBottomWidth", "borderLeftWidth",
-        "fontFamily", "fontSize", "fontWeight", "fontStyle",
-        "letterSpacing", "textTransform", "lineHeight",
-        "textAlign", "whiteSpace", "overflowWrap",
-    ] as const;
-
-    props.forEach((p) => {
-        // @ts-ignore
-        div.style[p] = computed[p];
-    });
-
-    // đảm bảo wrap giống textarea
-    div.style.whiteSpace = "pre-wrap";
-    div.style.overflowWrap = "break-word";
-    div.style.position = "absolute";
-    div.style.visibility = "hidden";
-    div.style.pointerEvents = "none";
-    div.style.top = "0";
-    div.style.left = "0";
-    div.style.zIndex = "-9999";
-
-    const value = ta.value;
-    const upToCaret = value.slice(0, Math.max(0, Math.min(caretIndex, value.length)));
-    const rest = value.slice(Math.max(0, Math.min(caretIndex, value.length)));
-
-    // Để giữ layout chính xác như textarea
-    div.textContent = "";
-    div.appendChild(document.createTextNode(upToCaret));
-    // caret marker
-    span.textContent = rest.length ? rest[0] : ".";
-    // thu nhỏ marker để đo chính xác dòng hiện tại
-    span.style.display = "inline-block";
-    div.appendChild(span);
-
-    document.body.appendChild(div);
-    const markerTop = span.offsetTop; // top tương đối trong div
-    document.body.removeChild(div);
-
-    // offsetTop đã bao gồm padding trên của mirror => tương ứng nội dung scrollable
-    return markerTop;
-};
 
 const NoteEditor: FC<NoteEditorProps> = ({ currentTime = 0 }) => {
     // UI states
@@ -78,7 +34,9 @@ const NoteEditor: FC<NoteEditorProps> = ({ currentTime = 0 }) => {
 
     const titleWrapperRef = useRef<HTMLDivElement>(null);
     const viewerRef = useRef<HTMLDivElement>(null);
-    const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+    // Div contentEditable để edit
+    const editorRef = useRef<HTMLDivElement>(null);
 
     // Engine cho READ mode (đồng bộ với video)
     const {
@@ -86,7 +44,6 @@ const NoteEditor: FC<NoteEditorProps> = ({ currentTime = 0 }) => {
         setContent,
         displayHtml,
         viewerEmptyText,
-        // doSearch,          // chỉ dùng ở READ (nếu cần)
         clearEngine,
         showDebug,
         setShowDebug,
@@ -97,6 +54,12 @@ const NoteEditor: FC<NoteEditorProps> = ({ currentTime = 0 }) => {
     const [editSearchTerm, setEditSearchTerm] = useState<string>("");
     const [editHits, setEditHits] = useState<Array<{ start: number; end: number }>>([]);
     const [editHitIndex, setEditHitIndex] = useState<number>(-1);
+
+    // ref tới span của hit đang active => cuộn tức thì
+    const activeHitRef = useRef<HTMLSpanElement | null>(null);
+    const setActiveRef = (el: HTMLSpanElement | null) => {
+        activeHitRef.current = el;
+    };
 
     // Click ngoài -> ẩn gợi ý
     useEffect(() => {
@@ -129,10 +92,7 @@ const NoteEditor: FC<NoteEditorProps> = ({ currentTime = 0 }) => {
 
             if (!q) {
                 notes.push(noteTitle); // không có keyword -> lấy tất cả
-            } else if (
-                noteTitle.toLowerCase().includes(q) ||
-                noteContent.toLowerCase().includes(q)
-            ) {
+            } else if (noteTitle.toLowerCase().includes(q) || noteContent.toLowerCase().includes(q)) {
                 notes.push(noteTitle);
             }
         }
@@ -184,29 +144,6 @@ const NoteEditor: FC<NoteEditorProps> = ({ currentTime = 0 }) => {
         return hits;
     };
 
-    /** Cuộn caret lên sát đỉnh textarea nhưng chừa offset nhỏ */
-    const scrollCaretToTopWithOffset = (ta: HTMLTextAreaElement, startIndex: number) => {
-        const caretTop = getCaretTopPx(ta, startIndex);
-        const target = caretTop - EDIT_TOP_OFFSET;
-        const maxScroll = ta.scrollHeight - ta.clientHeight;
-        const clamped = Math.max(0, Math.min(target, maxScroll));
-
-        // đặt selection trước rồi cuộn 2 khung hình để tránh tranh chấp layout
-        requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-                ta.scrollTop = clamped;
-            });
-        });
-    };
-
-    const focusToHitTop = (hit: { start: number; end: number }) => {
-        const el = textareaRef.current;
-        if (!el) return;
-        el.focus();
-        el.setSelectionRange(hit.start, hit.end);
-        scrollCaretToTopWithOffset(el, hit.start);
-    };
-
     /** Nhảy tới kết quả tiếp theo của term trong EDIT mode */
     const doEditSearchNext = (term: string) => {
         const t = term.trim();
@@ -223,7 +160,6 @@ const NoteEditor: FC<NoteEditorProps> = ({ currentTime = 0 }) => {
                 return;
             }
             setEditHitIndex(0);
-            focusToHitTop(hits[0]);
             return;
         }
 
@@ -234,7 +170,6 @@ const NoteEditor: FC<NoteEditorProps> = ({ currentTime = 0 }) => {
         }
         const next = (editHitIndex + 1) % editHits.length;
         setEditHitIndex(next);
-        focusToHitTop(editHits[next]);
     };
 
     // Submit nút 🔍
@@ -244,11 +179,81 @@ const NoteEditor: FC<NoteEditorProps> = ({ currentTime = 0 }) => {
         if (!term) return;
 
         if (mode === "edit") {
-            doEditSearchNext(term);      // chỉ tìm trong EDIT
-        } else {
-            // READ mode: không hiển thị ô search/nút — nên không vào nhánh này
-            // Nếu muốn hỗ trợ tạm: doSearch(term);
+            doEditSearchNext(term); // chỉ tìm trong EDIT
         }
+    };
+
+    // Khi content đổi trong EDIT: reset hits để tránh sai lệch index
+    useEffect(() => {
+        setEditHits([]);
+        setEditHitIndex(-1);
+        // giữ lại term người dùng đã gõ (searchArea) nhưng không auto tìm lại
+    }, [content]);
+
+    // Cuộn TỨC THÌ và ĐÚNG VỊ TRÍ tới hit đang chọn (không smooth, trừ padding, không cuộn khi đã nằm trong khung)
+    useLayoutEffect(() => {
+        const container = mode === "edit" ? editorRef.current : viewerRef.current;
+        const el = activeHitRef.current;
+        if (!container || !el) return;
+
+        const containerRect = container.getBoundingClientRect();
+        const elRect = el.getBoundingClientRect();
+
+        const bandTop = containerRect.top + EDIT_TOP_OFFSET;
+        const bandBottom = containerRect.bottom; // cho phép đụng đáy mới cuộn
+
+        const isAbove = elRect.top < bandTop;
+        const isBelow = elRect.bottom > bandBottom;
+
+        if (isAbove || isBelow) {
+            // Khoảng cách của span tới mép trên container (theo viewport),
+            // cộng với scrollTop hiện tại -> ra scrollTop tuyệt đối mong muốn.
+            const target =
+                container.scrollTop + (elRect.top - containerRect.top) - EDIT_TOP_OFFSET;
+
+            const maxScroll = container.scrollHeight - container.clientHeight;
+            const clamped = Math.max(0, Math.min(target, maxScroll));
+
+            // TẮT mọi smooth-scroll
+            (container as any).style.scrollBehavior = "auto";
+            container.scrollTop = clamped;
+        }
+    }, [mode, editHitIndex, editHits.length]);
+
+    // Render content với highlight khi có term
+    const renderWithHighlights = (
+        text: string,
+        hits: Array<{ start: number; end: number }>,
+        activeIdx: number
+    ): ReactNode => {
+        if (!hits.length) return text;
+
+        const nodes: ReactNode[] = [];
+        let last = 0;
+
+        hits.forEach((h, i) => {
+            if (h.start > last) {
+                nodes.push(<span key={`t-${last}`}>{text.slice(last, h.start)}</span>);
+            }
+            const isActive = i === activeIdx;
+            const ref = isActive ? setActiveRef : undefined;
+            nodes.push(
+                <span
+                    key={`h-${h.start}-${h.end}`}
+                    ref={ref}
+                    className={isActive ? "bg-yellow-300 text-black rounded px-0.5" : "bg-yellow-200 rounded px-0.5"}
+                >
+                    {text.slice(h.start, h.end)}
+                </span>
+            );
+            last = h.end;
+        });
+
+        if (last < text.length) {
+            nodes.push(<span key={`t-last-${last}`}>{text.slice(last)}</span>);
+        }
+
+        return nodes;
     };
 
     const viewerBannerHtml = useMemo(
@@ -269,11 +274,11 @@ const NoteEditor: FC<NoteEditorProps> = ({ currentTime = 0 }) => {
                     onChange={(e) => {
                         const v = e.target.value;
                         setTitle(v);
-                        fetchNotes(v); // khi gõ thì lọc theo keyword
+                        fetchNotes(v);
                     }}
                     placeholder="Tên bản lưu..."
                     className="w-full pr-8"
-                    onFocus={() => fetchNotes("")}  // luôn show toàn bộ khi chưa gõ
+                    onFocus={() => fetchNotes("")}
                     onClick={() => fetchNotes("")}
                 />
 
@@ -296,7 +301,6 @@ const NoteEditor: FC<NoteEditorProps> = ({ currentTime = 0 }) => {
                             setTitle(noteTitle);
                             setContent(localStorage.getItem("note_" + noteTitle) ?? "");
                             setShowSuggestions(false);
-                            // đổi nội dung -> reset hit tìm kiếm edit
                             setEditHits([]);
                             setEditHitIndex(-1);
                             setEditSearchTerm("");
@@ -322,33 +326,31 @@ const NoteEditor: FC<NoteEditorProps> = ({ currentTime = 0 }) => {
                 </button>
 
                 <label className="ml-auto flex items-center gap-2 text-xs text-gray-600">
-                    <input
-                        type="checkbox"
-                        checked={showDebug}
-                        onChange={(e) => setShowDebug(e.target.checked)}
-                    />{" "}
-                    Debug
+                    <input type="checkbox" checked={showDebug} onChange={(e) => setShowDebug(e.target.checked)} /> Debug
                 </label>
             </div>
 
             {/* Nội dung chính */}
             <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
                 {mode === "edit" ? (
-                    <textarea
-                        ref={textareaRef}
-                        value={content}
-                        onChange={(e) => {
-                            setContent(e.target.value);
-                            // invalidate các hit cũ khi nội dung đổi
-                            setEditHits([]);
-                            setEditHitIndex(-1);
-                        }}
-                        placeholder={NOTE_PLACEHOLDER}
-                        className="flex-1 min-h-0 w-full p-2 border rounded text-base leading-[25px]
-              focus:border-blue-500 focus:outline-none
-              resize-none overflow-auto"
-                        spellCheck={false}
-                    />
+                    <div className="flex-1 min-h-0 flex flex-col border rounded bg-white overflow-hidden">
+                        <div
+                            ref={editorRef}
+                            contentEditable
+                            suppressContentEditableWarning
+                            onInput={(e) => {
+                                const text = (e.currentTarget.textContent ?? "").replace(/\r\n/g, "\n");
+                                setContent(text);
+                            }}
+                            className="flex-1 min-h-0 p-3 text-base leading-[25px] whitespace-pre-wrap overflow-auto outline-none"
+                            style={{ scrollBehavior: "auto" }} // đảm bảo KHÔNG smooth
+                            spellCheck={false}
+                        >
+                            {editSearchTerm && editHits.length > 0
+                                ? renderWithHighlights(content, editHits, Math.max(0, editHitIndex))
+                                : content || <span className="text-gray-400 select-none">{NOTE_PLACEHOLDER}</span>}
+                        </div>
+                    </div>
                 ) : (
                     <div className="flex-1 min-h-0 flex flex-col border rounded bg-gray-50 overflow-hidden">
                         <div
@@ -356,6 +358,7 @@ const NoteEditor: FC<NoteEditorProps> = ({ currentTime = 0 }) => {
                             className="flex-1 min-h-0 p-3 text-base leading-[25px] whitespace-pre-wrap overflow-auto"
                             // eslint-disable-next-line react/no-danger
                             dangerouslySetInnerHTML={viewerBannerHtml}
+                            style={{ scrollBehavior: "auto" }} // không smooth
                         />
                     </div>
                 )}
@@ -364,7 +367,6 @@ const NoteEditor: FC<NoteEditorProps> = ({ currentTime = 0 }) => {
             {/* Thanh Actions: CHỈ hiện ở Edit */}
             {mode === "edit" && (
                 <div className="flex items-center justify-end gap-2 mt-2 shrink-0">
-                    {/* Ô Search chỉ dùng trong Edit */}
                     <form
                         onSubmit={handleSearchSubmit}
                         className="flex items-center border border-blue-500 rounded-full overflow-hidden bg-white relative h-8 w-[220px] mr-2"
