@@ -5,7 +5,7 @@ type ResultItemProps = {
     onClick: () => void;
 };
 
-const ResultItem = ({ videoId, title, thumbnail, onClick }: ResultItemProps) => (
+const ResultItem = ({ title, thumbnail, onClick }: ResultItemProps) => (
     <button
         onClick={onClick}
         className="w-full text-left bg-white rounded-lg shadow hover:shadow-md active:scale-[0.99] transition p-2"
