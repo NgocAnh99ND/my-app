@@ -36,6 +36,9 @@ function saveHistory(link: string) {
     const without = current.filter((x) => x.toLowerCase() !== t.toLowerCase());
     const next = [t, ...without].slice(0, MAX_HISTORY);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+
+    // ✅ Phát tín hiệu realtime cho YoutubeLinkInput biết có link mới
+    window.dispatchEvent(new Event("youtube_links_updated"));
 }
 
 const ResultList = ({ items, onSelectVideo }: ResultListProps) => {

@@ -37,6 +37,9 @@ function saveHistory(link: string) {
     const without = current.filter((x) => x.toLowerCase() !== t.toLowerCase());
     const next = [t, ...without].slice(0, MAX_HISTORY);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+
+    // ✅ Phát tín hiệu khi có video mới được thêm (để YoutubeLinkInput cập nhật)
+    window.dispatchEvent(new Event("youtube_links_updated"));
 }
 
 const YoutubeLinkInput: FC<YoutubeLinkInputProps> = ({
@@ -52,7 +55,17 @@ const YoutubeLinkInput: FC<YoutubeLinkInputProps> = ({
     const [showSuggestions, setShowSuggestions] = useState(false);
     const wrapperRef = useRef<HTMLDivElement>(null);
 
-    // Lắng nghe click ngoài để ẩn suggestions
+    // ✅ Hàm làm mới gợi ý
+    const refreshSuggestions = (keyword = "") => {
+        const all = loadHistory();
+        const filtered = keyword
+            ? all.filter((k) => k.toLowerCase().includes(keyword.toLowerCase()))
+            : all;
+        setSuggestions(filtered);
+        setShowSuggestions(filtered.length > 0);
+    };
+
+    // ✅ Khi click ngoài vùng input → ẩn gợi ý
     useEffect(() => {
         const handleClickOutside = (e: MouseEvent) => {
             if (
@@ -63,27 +76,21 @@ const YoutubeLinkInput: FC<YoutubeLinkInputProps> = ({
             }
         };
         document.addEventListener("mousedown", handleClickOutside);
-        return () => {
-            document.removeEventListener("mousedown", handleClickOutside);
-        };
+        return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
-    const refreshSuggestions = (keyword = "") => {
-        const all = loadHistory();
-        const filtered = keyword
-            ? all.filter((k) => k.toLowerCase().includes(keyword.toLowerCase()))
-            : all;
-        setSuggestions(filtered);
-        setShowSuggestions(filtered.length > 0);
-    };
+    // ✅ Khi trang ResultList thêm link mới → tự cập nhật gợi ý
+    useEffect(() => {
+        const handleLinksUpdate = () => {
+            refreshSuggestions(value);
+            setShowSuggestions(true); // mở danh sách khi có link mới
+        };
+        window.addEventListener("youtube_links_updated", handleLinksUpdate);
+        return () => window.removeEventListener("youtube_links_updated", handleLinksUpdate);
+    }, [value]);
 
-    const handleFocus = () => {
-        refreshSuggestions(value);
-    };
-
-    const handleClick = () => {
-        refreshSuggestions(value);
-    };
+    const handleFocus = () => refreshSuggestions(value);
+    const handleClick = () => refreshSuggestions(value);
 
     const handleChange = (v: string) => {
         onChange(v);
@@ -102,7 +109,7 @@ const YoutubeLinkInput: FC<YoutubeLinkInputProps> = ({
 
     const handlePlayClick = () => {
         if (value.trim()) {
-            saveHistory(value);
+            saveHistory(value); // ✅ Lưu vào localStorage khi bấm Play
             onPlay();
             setShowSuggestions(false);
         }
@@ -123,6 +130,7 @@ const YoutubeLinkInput: FC<YoutubeLinkInputProps> = ({
                     onFocus={handleFocus}
                     onClick={handleClick}
                 />
+
                 {value && (
                     <IconButton
                         icon={
@@ -138,7 +146,8 @@ const YoutubeLinkInput: FC<YoutubeLinkInputProps> = ({
                         ariaLabel="Clear input"
                     />
                 )}
-                {/* Suggestions */}
+
+                {/* ✅ Hiển thị gợi ý link + thumbnail */}
                 {showSuggestions && (
                     <SuggestionList
                         suggestions={suggestions}
