@@ -6,6 +6,34 @@ type YTItem = {
     snippet: { title: string; thumbnails?: { medium?: { url?: string } } };
 };
 
+const STORAGE_KEY = "youtube_links";
+const MAX_HISTORY = 50;
+
+function loadHistory(): string[] {
+    try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return [];
+        const arr = JSON.parse(raw) as unknown;
+        return Array.isArray(arr)
+            ? (arr.filter((x) => typeof x === "string") as string[])
+            : [];
+    } catch {
+        return [];
+    }
+}
+
+function saveHistory(link: string) {
+    const t = link.trim();
+    if (!t) return;
+    const current = loadHistory();
+    const without = current.filter((x) => x.toLowerCase() !== t.toLowerCase());
+    const next = [t, ...without].slice(0, MAX_HISTORY);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+
+    // ✅ Thông báo realtime cho YoutubeLinkInput biết localStorage có thay đổi
+    window.dispatchEvent(new Event("youtube_links_updated"));
+}
+
 export default function Result() {
     const navigate = useNavigate();
     const [params] = useSearchParams();
@@ -65,9 +93,13 @@ export default function Result() {
 
     const handlePick = (videoId: string) => {
         const url = `https://www.youtube.com/watch?v=${videoId}`;
-        // ✅ gửi về Home để phát video mới
+
+        // ✅ Lưu vào localStorage (để YoutubeLinkInput hiển thị ở Suggestion)
+        saveHistory(url);
+
+        // ✅ Gửi về Home để phát video
         localStorage.setItem("selectedVideoUrl", url);
-        navigate("/"); // quay về Home
+        navigate("/");
     };
 
     return (
@@ -83,12 +115,11 @@ export default function Result() {
             </div>
 
             <p className="mb-4">
-                Keyword: <b>{keyword || "(empty)"}</b>
+                Keyword: <b>{keyword || "(empty)"} </b>
             </p>
 
             {loading && <p>Đang tải...</p>}
             {err && <p className="text-red-600">{err}</p>}
-
             {!loading && !err && results.length === 0 && <p>No result.</p>}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
